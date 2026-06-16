@@ -156,7 +156,14 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   // Step 3: CPA OAuth
   reportStatus("cpa_oauth");
 
-  // 打印当前使用的 IP
+  // 打印当前使用的 IP（通过代理检测出口 IP）
+  const { setGlobalDispatcher } = await import("undici");
+  const { createProxyDispatcher } = await import("./proxy-dispatcher.js");
+  const proxyUrl = appConfig.defaultProxyUrl;
+  if (proxyUrl) {
+    setGlobalDispatcher(createProxyDispatcher(proxyUrl, true));
+  }
+
   const ipInfo = await getIpInfo();
   const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
   const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";

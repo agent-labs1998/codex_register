@@ -789,7 +789,14 @@ async function main() {
           tokenOutPath,
         });
 
-        // 获取并显示 IP 信息
+        // 获取并显示 IP 信息（通过代理检测出口 IP）
+        const { setGlobalDispatcher } = await import("undici");
+        const { createProxyDispatcher } = await import("./proxy-dispatcher.js");
+        const proxyUrl = appConfig.defaultProxyUrl;
+        if (proxyUrl) {
+          setGlobalDispatcher(createProxyDispatcher(proxyUrl, true));
+        }
+
         const { getIpInfo } = await import("./ip-detect.js");
         const ipInfo = await getIpInfo();
         const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
