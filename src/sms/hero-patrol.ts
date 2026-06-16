@@ -17,8 +17,18 @@ function parseActivationTimeMs(value?: string): number {
     if (!value) {
         return 0;
     }
-    // HeroSMS 返回的是本地时间，不要加 Z
-    const ms = Date.parse(value.replace(" ", "T"));
+
+    // 自动检测 HeroSMS 时间的时区
+    // 先尝试 UTC 解析
+    let ms = Date.parse(value.replace(" ", "T") + "Z");
+
+    // 如果年龄是负数或超过 24 小时，切换到 UTC+8
+    const now = Date.now();
+    const ageSeconds = Math.floor((now - ms) / 1000);
+    if (ageSeconds < 0 || ageSeconds > 86400) {
+        ms = Date.parse(value.replace(" ", "T") + "+08:00");
+    }
+
     return Number.isFinite(ms) ? ms : 0;
 }
 

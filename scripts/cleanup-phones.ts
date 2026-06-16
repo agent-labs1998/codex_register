@@ -56,10 +56,21 @@ async function getActiveActivations(): Promise<Activation[]> {
 
     if (!activationId || !phoneNumber) continue;
 
-    // 计算激活时间（HeroSMS 返回的是本地时间，不要加 Z）
-    const activationDate = new Date(activationTime.replace(" ", "T"));
-    const ageMs = now - activationDate.getTime();
-    const ageSeconds = Math.floor(ageMs / 1000);
+    // 自动检测 HeroSMS 时间的时区
+    // HeroSMS 返回格式：2026-06-16 13:40:25（无时区信息）
+    // 策略：先尝试 UTC 解析，如果年龄是负数或超过 24 小时，切换到 UTC+8
+
+    let activationDate = new Date(activationTime.replace(" ", "T") + "Z"); // 先尝试 UTC
+    let ageMs = now - activationDate.getTime();
+    let ageSeconds = Math.floor(ageMs / 1000);
+
+    // 如果年龄是负数或超过 24 小时（86400 秒），说明时区解析错误
+    if (ageSeconds < 0 || ageSeconds > 86400) {
+      // 尝试 UTC+8（北京时间）
+      activationDate = new Date(activationTime.replace(" ", "T") + "+08:00");
+      ageMs = now - activationDate.getTime();
+      ageSeconds = Math.floor(ageMs / 1000);
+    }
 
     results.push({
       activationId,
