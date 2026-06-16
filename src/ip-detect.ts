@@ -13,39 +13,7 @@ export interface IpInfo {
   isResidential: boolean;
   isProxy: boolean;
   isHosting: boolean;
-}
-
-// 判断是否住宅 IP
-function checkResidential(isp: string, org: string, as: string): boolean {
-  const keywords = [
-    "hosting", "datacenter", "cloud", "server", "vps",
-    "digital ocean", "amazon", "google", "microsoft", "azure",
-    "alibaba", "tencent", "ovh", "hetzner", "linode",
-    "vultr", "leaseweb", "colocrossing", "psychz",
-    "proxy", "vpn", "tor", "anonymous"
-  ];
-
-  const text = `${isp} ${org} ${as}`.toLowerCase();
-  return !keywords.some(kw => text.includes(kw));
-}
-
-// 判断是否代理/VPN
-function checkProxy(isp: string, org: string): boolean {
-  const keywords = ["proxy", "vpn", "tor", "anonymous", "hide", "shield"];
-  const text = `${isp} ${org}`.toLowerCase();
-  return keywords.some(kw => text.includes(kw));
-}
-
-// 判断是否托管/数据中心
-function checkHosting(isp: string, org: string, as: string): boolean {
-  const keywords = [
-    "hosting", "datacenter", "cloud", "server", "vps",
-    "digital ocean", "amazon", "google", "microsoft", "azure",
-    "alibaba", "tencent", "ovh", "hetzner", "linode",
-    "vultr", "leaseweb", "colocrossing", "psychz"
-  ];
-  const text = `${isp} ${org} ${as}`.toLowerCase();
-  return keywords.some(kw => text.includes(kw));
+  isMobile: boolean;
 }
 
 let cachedIpInfo: IpInfo | null = null;
@@ -57,6 +25,7 @@ export async function getIpInfo(): Promise<IpInfo> {
 
   try {
     // ip-api.com 免费 API，无需 API key
+    // fields=66846719 包含所有需要的字段
     const res = await fetch("http://ip-api.com/json/?fields=66846719", {
       signal: AbortSignal.timeout(10000)
     });
@@ -66,23 +35,21 @@ export async function getIpInfo(): Promise<IpInfo> {
       throw new Error(data.message || "API request failed");
     }
 
-    const ip = data.query || "unknown";
-    const isp = data.isp || "";
-    const org = data.org || "";
-    const as = data.as || "";
-
+    // 直接使用 API 返回的字段
     cachedIpInfo = {
-      ip,
+      ip: data.query || "unknown",
       country: data.country || "unknown",
       countryCode: data.countryCode || "unknown",
       region: data.regionName || "unknown",
       city: data.city || "unknown",
-      isp,
-      org,
-      as,
-      isResidential: checkResidential(isp, org, as),
-      isProxy: checkProxy(isp, org),
-      isHosting: checkHosting(isp, org, as),
+      isp: data.isp || "unknown",
+      org: data.org || "unknown",
+      as: data.as || "unknown",
+      // 住宅 IP = 不是代理 且 不是托管
+      isResidential: !data.proxy && !data.hosting,
+      isProxy: data.proxy || false,
+      isHosting: data.hosting || false,
+      isMobile: data.mobile || false,
     };
 
     return cachedIpInfo;
@@ -100,6 +67,7 @@ export async function getIpInfo(): Promise<IpInfo> {
       isResidential: false,
       isProxy: false,
       isHosting: false,
+      isMobile: false,
     };
   }
 }

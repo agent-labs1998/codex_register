@@ -159,7 +159,9 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   // 打印当前使用的 IP
   const ipInfo = await getIpInfo();
   const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
-  console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag}`);
+  const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
+  const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
+  console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
 
   const { requestCodexAuthUrl, submitOAuthCallback, listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
 

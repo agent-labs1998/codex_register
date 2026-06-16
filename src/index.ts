@@ -793,12 +793,14 @@ async function main() {
         const { getIpInfo } = await import("./ip-detect.js");
         const ipInfo = await getIpInfo();
         const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+        const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
+        const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
 
         console.log(`\n${"=".repeat(60)}`);
         console.log(`[workflow] 启动 workflow=${workflowName} runId=${runId}`);
         console.log(`[workflow] 目标: count=${count} concurrency=${concurrency}`);
         console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
-        console.log(`[IP] 类型: ${residentialTag} | 代理: ${ipInfo.isProxy ? "是" : "否"}`);
+        console.log(`[IP] 类型: ${residentialTag} ${proxyTag} ${mobileTag}`);
         console.log(`${"=".repeat(60)}\n`);
 
         let successCount = 0;
