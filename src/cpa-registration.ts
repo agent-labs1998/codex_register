@@ -81,20 +81,31 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   let smsCode: string;
   try {
-    const remainingMs = deadlines.smsDeadlineAt - Date.now();
-    if (remainingMs <= 0) {
-      throw new Error("SMS deadline already passed");
-    }
-
+    // Worker 只等待 65 秒，超时后立即释放 worker，重新注册新 worker
+    // 巡视器会在后台持续检查，120 秒后释放号码
+    const SMS_WAIT_TIMEOUT_MS = 65_000;
     const result = await Promise.race([
       phoneLease.waitForVerificationCode().then(v => v.code),
-      new Promise<never>((_, reject) => {
-        setTimeout(async () => {
-          await cancelActivation(activationId);
-          reject(new Error(`SMS_RELEASE_DEADLINE: ${remainingMs}ms 内未收到验证码`));
-        }, remainingMs);
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), SMS_WAIT_TIMEOUT_MS);
       }),
     ]);
+
+    if (!result) {
+      // 65 秒内未收到验证码，立即释放 worker
+      // 号码会在巡视器中 120 秒后释放
+      reportStatus("timed_out");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
 
     smsCode = result;
     reportStatus("sms_received");
