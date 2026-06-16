@@ -839,8 +839,8 @@ export function createHeroSmsProvider(config: HeroSmsProviderConfig) {
       }
 
       for (let attempt = 1; attempt <= pollAttempts; attempt += 1) {
-        // 只在第 1、5、10、15 次尝试时输出日志，减少噪音
-        if (attempt === 1 || attempt === 5 || attempt === 10 || attempt === pollAttempts) {
+        // 只在第 1 次和最后一次尝试时输出日志，减少噪音
+        if (attempt === 1 || attempt === pollAttempts) {
           console.log(`[SMS] 等待验证码 (${attempt}/${pollAttempts})`);
         }
         // 这基于一个假设，heroSMS 不会同时有太多正在激活的 activation（小于 20），这样可以精确获取状态
