@@ -2,6 +2,7 @@ import { appConfig } from "./config.js";
 import { generateRandomDeviceProfile } from "./device-profile.js";
 import { OpenAIClient } from "./openai.js";
 import { SMSActivationLease } from "./sms/index.js";
+import { getIpInfo } from "./ip-detect.js";
 
 export interface RegistrationTask {
   workerId: string;
@@ -154,6 +155,11 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   // Step 3: CPA OAuth
   reportStatus("cpa_oauth");
+
+  // 打印当前使用的 IP
+  const ipInfo = await getIpInfo();
+  const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+  console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag}`);
 
   const { requestCodexAuthUrl, submitOAuthCallback, listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
 
