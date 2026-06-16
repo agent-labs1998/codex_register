@@ -789,7 +789,17 @@ async function main() {
           tokenOutPath,
         });
 
-        console.log(`\n[workflow] 启动 workflow=${workflowName} runId=${runId} count=${count} concurrency=${concurrency}`);
+        // 获取并显示 IP 信息
+        const { getIpInfo } = await import("./ip-detect.js");
+        const ipInfo = await getIpInfo();
+        const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+
+        console.log(`\n${"=".repeat(60)}`);
+        console.log(`[workflow] 启动 workflow=${workflowName} runId=${runId}`);
+        console.log(`[workflow] 目标: count=${count} concurrency=${concurrency}`);
+        console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
+        console.log(`[IP] 类型: ${residentialTag} | 代理: ${ipInfo.isProxy ? "是" : "否"}`);
+        console.log(`${"=".repeat(60)}\n`);
 
         let successCount = 0;
         let failureCount = 0;
@@ -993,9 +1003,12 @@ async function main() {
         const accounts = db.listAccounts();
         console.log(`\n[db] 账号列表 (共 ${accounts.length} 个):\n`);
         for (const acc of accounts) {
+          const residential = acc.ip_is_residential ? "🏠 住宅" : "🏢 数据中心";
           console.log(`  ID: ${acc.id}`);
           console.log(`  Phone: ${acc.phone}`);
           console.log(`  Email: ${acc.email}`);
+          console.log(`  IP: ${acc.ip_address || "unknown"} | ${acc.ip_country || "?"} ${acc.ip_city || "?"} | ${residential}`);
+          console.log(`  ISP: ${acc.ip_isp || "unknown"}`);
           console.log(`  Status: ${acc.status}`);
           console.log(`  Created: ${acc.created_at}`);
           console.log(`  Token: ${acc.access_token.slice(0, 20)}...`);

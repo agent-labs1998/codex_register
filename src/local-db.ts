@@ -40,6 +40,11 @@ interface Account {
   token_expires_at: string | null;
   cpa_auth_file: string;
   cpa_base_url: string;
+  ip_address: string;
+  ip_country: string;
+  ip_city: string;
+  ip_isp: string;
+  ip_is_residential: number;
   created_at: string;
   updated_at: string;
   status: string;
@@ -116,6 +121,11 @@ export class LocalDB {
         token_expires_at TEXT,
         cpa_auth_file TEXT,
         cpa_base_url TEXT,
+        ip_address TEXT,
+        ip_country TEXT,
+        ip_city TEXT,
+        ip_isp TEXT,
+        ip_is_residential INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         status TEXT NOT NULL DEFAULT 'active'
@@ -207,8 +217,8 @@ export class LocalDB {
 
   saveAccount(account: Omit<Account, "id" | "created_at" | "updated_at">): number {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO accounts (phone, email, password, access_token, token_expires_at, cpa_auth_file, cpa_base_url, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO accounts (phone, email, password, access_token, token_expires_at, cpa_auth_file, cpa_base_url, ip_address, ip_country, ip_city, ip_isp, ip_is_residential, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       account.phone,
@@ -218,6 +228,11 @@ export class LocalDB {
       account.token_expires_at || null,
       account.cpa_auth_file || null,
       account.cpa_base_url || null,
+      account.ip_address || null,
+      account.ip_country || null,
+      account.ip_city || null,
+      account.ip_isp || null,
+      account.ip_is_residential || 0,
       account.status || "active"
     );
     return result.lastInsertRowid as number;

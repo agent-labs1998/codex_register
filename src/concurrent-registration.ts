@@ -3,6 +3,8 @@ import { generateRandomDeviceProfile } from "./device-profile.js";
 import { OpenAIClient } from "./openai.js";
 import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
 import { LocalDB } from "./local-db.js";
+import { randomUUID } from "node:crypto";
+import { getIpInfo, IpInfo } from "./ip-detect.js";
 
 export interface PhoneLease {
   phoneNumber: string;
@@ -70,7 +72,7 @@ export class ConcurrentPhonePool {
     const acquirePromises: Promise<void>[] = [];
 
     for (let i = 0; i < Math.min(count, this.maxPhones); i++) {
-      const workerId = `concurrent-${String(i + 1).padStart(3, "0")}`;
+      const workerId = `concurrent-run${runId}-${String(i + 1).padStart(3, "0")}-${randomUUID().slice(0, 8)}`;
       const attemptId = this.db.createAttempt(runId);
 
       // 创建 worker slot 并实时写入 db
@@ -403,41 +405,16 @@ async function executeSingleRegistration(
   // Step 2: 等待 SMS 验证码
   console.log(`[concurrent] ${workerId} 等待验证码...`);
 
-  const smsDeadlineAt = receivedAt + smsTimeoutMs;
-  const remainingMs = smsDeadlineAt - Date.now();
-
-  if (remainingMs <= 0) {
-    await pool.cancelPhone(phoneLease);
-    pool.removeLease(phoneLease);
-
-    db.updateWorkerSlot(workerId, {
-      status: "timed_out",
-      last_error: "SMS deadline already passed",
-    });
-
-    db.updateAttempt(attemptId, {
-      status: "failed",
-      error: "SMS deadline already passed",
-    });
-
-    return {
-      success: false,
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: "SMS deadline already passed",
-      activationId,
-      workerId,
-      attemptId,
-    };
-  }
+  // Worker 只等待 65 秒，超时后立即释放 worker，重新注册新 worker
+  // 巡视器会在后台持续检查，120 秒后释放号码
+  const SMS_WAIT_TIMEOUT_MS = 65_000;
 
   let smsCode: string | null;
   try {
     smsCode = await Promise.race([
       lease.waitForVerificationCode().then(v => v.code),
       new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), remainingMs);
+        setTimeout(() => resolve(null), SMS_WAIT_TIMEOUT_MS);
       }),
     ]);
   } catch (error) {
@@ -445,17 +422,18 @@ async function executeSingleRegistration(
   }
 
   if (!smsCode) {
-    await pool.cancelPhone(phoneLease);
+    // 65 秒内未收到验证码，立即释放 worker
+    // 号码会在巡视器中 120 秒后释放
     pool.removeLease(phoneLease);
 
     db.updateWorkerSlot(workerId, {
       status: "timed_out",
-      last_error: "SMS verification timeout",
+      last_error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
     });
 
     db.updateAttempt(attemptId, {
       status: "failed",
-      error: "SMS verification timeout",
+      error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
     });
 
     return {
@@ -463,7 +441,7 @@ async function executeSingleRegistration(
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: "SMS verification timeout",
+      error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
       activationId,
       workerId,
       attemptId,
@@ -735,6 +713,12 @@ async function executeSingleRegistration(
       finished_at: new Date().toISOString(),
     });
 
+    // 获取当前 IP 详细信息
+    const ipInfo = await getIpInfo();
+    const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+
+    console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag}`);
+
     // 保存账号到数据库
     db.saveAccount({
       phone: phoneNumber,
@@ -744,6 +728,11 @@ async function executeSingleRegistration(
       token_expires_at: null,
       cpa_auth_file: latest.name,
       cpa_base_url: cpaBase,
+      ip_address: ipInfo.ip,
+      ip_country: ipInfo.country,
+      ip_city: ipInfo.city,
+      ip_isp: ipInfo.isp,
+      ip_is_residential: ipInfo.isResidential ? 1 : 0,
       status: "active",
     });
 

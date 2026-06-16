@@ -2,6 +2,7 @@ import { LocalDB } from "./local-db.js";
 import { runCpaRegistration, RegistrationTask, CodexCpaResult } from "./cpa-registration.js";
 import { appConfig } from "./config.js";
 import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
+import { randomUUID } from "node:crypto";
 
 export type WorkerStatus =
   | "idle"
@@ -61,7 +62,7 @@ export class WorkerScheduler {
 
     // 创建 worker slots
     for (let i = 0; i < this.config.concurrency; i++) {
-      const workerId = `worker-${String(i + 1).padStart(3, "0")}`;
+      const workerId = `worker-run${this.config.runId}-${String(i + 1).padStart(3, "0")}-${randomUUID().slice(0, 8)}`;
       this.db.createWorkerSlot(workerId, this.config.runId);
     }
 

@@ -17,7 +17,8 @@ function parseActivationTimeMs(value?: string): number {
     if (!value) {
         return 0;
     }
-    const ms = Date.parse(value.replace(" ", "T") + "Z");
+    // HeroSMS 返回的是本地时间，不要加 Z
+    const ms = Date.parse(value.replace(" ", "T"));
     return Number.isFinite(ms) ? ms : 0;
 }
 
@@ -29,7 +30,8 @@ export function startHeroSmsPatrolLoop(): {stop: () => void} {
 
     let running = true;
     const POLL_INTERVAL_MS = 10_000;
-    const SMS_RELEASE_MS = 65_000;
+    // HeroSMS 需要 120 秒后才能释放号码
+    const SMS_RELEASE_MS = 120_000;
 
     const loop = (async () => {
         while (running) {
@@ -76,7 +78,7 @@ async function fetchAllActiveActivations(apiKey: string): Promise<ActiveActivati
     const limit = 200;
 
     while (true) {
-        const url = `${HERO_SMS_API_BASE}?api_key=${encodeURIComponent(apiKey)}&action=getActiveActivations&start=${start}&limit=${limit}`;
+        const url = `${HERO_SMS_API_BASE}?action=getActiveActivations&api_key=${encodeURIComponent(apiKey)}&start=${start}&limit=${limit}`;
         const res = await fetch(url, {method: "GET"});
         const body = await res.text();
 
@@ -112,7 +114,7 @@ async function fetchAllActiveActivations(apiKey: string): Promise<ActiveActivati
 }
 
 async function cancelActivationById(apiKey: string, activationId: string): Promise<void> {
-    const url = `${HERO_SMS_API_BASE}?api_key=${encodeURIComponent(apiKey)}&action=setStatus&id=${encodeURIComponent(activationId)}&status=8`;
+    const url = `${HERO_SMS_API_BASE}?action=setStatus&id=${encodeURIComponent(activationId)}&status=8&api_key=${encodeURIComponent(apiKey)}`;
     try {
         const res = await fetch(url, {method: "GET"});
         const body = await res.text();

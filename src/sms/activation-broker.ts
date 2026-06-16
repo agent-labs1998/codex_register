@@ -328,9 +328,12 @@ export class ActivationBroker<
         this.currentActivation.phoneNumber,
         this.currentActivation.activationId,
       );
-      console.log(
-        `[pollSMSCode] 进行新一轮尝试 activationId=${this.currentActivation.activationId} phone=+${this.currentActivation.phoneNumber} round=${this.round} activationAttempts=${this.usage?.startedAttemptCount ?? 0} totalAttempts=${this.history.totalAttemptsStarted}`,
-      );
+      // 简化日志，只在第一次尝试时输出
+      if (this.history.totalAttemptsStarted === 1) {
+        console.log(
+          `[SMS] 开始等待验证码 +${this.currentActivation.phoneNumber}`,
+        );
+      }
     }
   }
 

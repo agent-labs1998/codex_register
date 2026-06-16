@@ -9,7 +9,8 @@
     "start": "node bundle/index.cjs",
     "check": "node bundle/check-auth-quota.cjs",
     "check:cpa": "node bundle/check-auth-quota.cjs --cpa",
-    "batch": "node bundle/batch-register.cjs"
+    "batch": "node bundle/batch-register.cjs",
+    "cleanup": "tsx scripts/cleanup-phones.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.4.0",
