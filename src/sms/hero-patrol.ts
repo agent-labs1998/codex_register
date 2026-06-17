@@ -93,7 +93,7 @@ async function fetchAllActiveActivations(apiKey: string): Promise<ActiveActivati
     try {
       while (true) {
           const url = `${HERO_SMS_API_BASE}?action=getActiveActivations&api_key=${encodeURIComponent(apiKey)}&start=${start}&limit=${limit}`;
-          const res = await proxyFetch(url, {method: "GET"});
+          const res = await fetch(url, {method: "GET"});
           const body = await res.text();
 
           let payload: any = {};
