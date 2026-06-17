@@ -122,8 +122,9 @@ async function runOnce(): Promise<void> {
             console.log(`[codex-cpa] [0] 未传 --phone，自动 phone signup 注册新号`);
 
             // 显示当前使用的 IP（通过代理检测出口 IP）
+            let ipInfo: any = null;
             try {
-                const ipInfo = await getIpInfo();
+                ipInfo = await getIpInfo();
                 const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
                 const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
                 const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
@@ -407,6 +408,37 @@ async function runOnce(): Promise<void> {
 
         console.log(`\n[✅️codex-cpa 成功] phone=${phone} email=${bindEmail || "(none)"} 已入 CPA token 池`);
         console.log(`[POOL-RESULT] status=ok phone=${phone} email=${bindEmail || ""}`);
+
+        // 写入本地数据库
+        try {
+            const dbPath = "data/codex-register.sqlite";
+            const db = new LocalDB(dbPath);
+
+            // 创建或获取单次运行的 workflow_run
+            const runId = db.createWorkflowRun("codex-cpa-single", {
+                mode: "single",
+                phone,
+                email: bindEmail,
+            });
+
+            // 写入 accounts 表
+            db.saveAccount({
+                phone: phone,
+                email: bindEmail || "",
+                password: password,
+                access_token: chatgptAccessToken,
+                ip_address: ipInfo?.ip || "unknown",
+                ip_country: ipInfo?.country || "unknown",
+                ip_city: ipInfo?.city || "unknown",
+                ip_isp: ipInfo?.isp || "unknown",
+                ip_is_residential: ipInfo?.isResidential ? 1 : 0,
+                status: "active",
+            });
+
+            console.log(`[codex-cpa] [✅️] 已写入本地数据库 (phone=${phone}, email=${bindEmail})`);
+        } catch (dbError) {
+            console.warn(`[codex-cpa] [⚠️] 写入数据库失败: ${(dbError as Error).message}`);
+        }
 
         // 注册成功 → 把用过的 hotmail 卡密从池文件移除，append 到 history
         if (bindEmail) {
@@ -1146,11 +1178,35 @@ async function main() {
     }
 
     if (hasFlag("--codex-cpa") || hasFlag("--phone")) {
+        let runId: number | null = null;
+        let db: any = null;
+
         try {
+            // 初始化数据库
+            const dbPath = "data/codex-register.sqlite";
+            db = new LocalDB(dbPath);
+            runId = db.createWorkflowRun("codex-cpa-single", {
+                mode: "single",
+            });
+
             await runOnce();
         } catch (error) {
             console.error(`[❌️授权失败]`, error);
             process.exitCode = 1;
+
+            // 失败时写入 registration_attempts 表
+            if (db && runId) {
+                try {
+                    const attemptId = db.createAttempt(runId);
+                    db.updateAttempt(attemptId, {
+                        status: "failed",
+                        error: (error as Error).message || "未知错误",
+                    });
+                    console.log(`[codex-cpa] [❌️] 已记录失败到数据库 (attemptId=${attemptId})`);
+                } catch (dbError) {
+                    console.warn(`[codex-cpa] [⚠️] 记录失败到数据库失败: ${(dbError as Error).message}`);
+                }
+            }
         }
         return;
     }
