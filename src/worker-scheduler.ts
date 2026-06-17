@@ -4,6 +4,7 @@ import { appConfig } from "./config.js";
 import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
 import { randomUUID } from "node:crypto";
 import { proxyFetch } from "./proxy-fetch.js";
+import { getIpInfo, IpInfo } from "./ip-detect.js";
 
 export type WorkerStatus =
   | "idle"
@@ -111,6 +112,18 @@ export class WorkerScheduler {
 
     console.log(`\n[scheduler] ${workerId} 开始任务 ${taskIndex}/${this.config.count}`);
 
+    // 检测 IP
+    let ipInfo: IpInfo | null = null;
+    try {
+      ipInfo = await getIpInfo();
+      const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+      const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
+      const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
+      console.log(`[scheduler] ${workerId} [IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
+    } catch (error) {
+      console.warn(`[scheduler] ${workerId} [IP] 检测失败: ${(error as Error).message}`);
+    }
+
     try {
       // Step 1: 获取号码
       let phoneLease: SMSActivationLease;
@@ -209,6 +222,11 @@ export class WorkerScheduler {
           token_expires_at: null,
           cpa_auth_file: result.cpaAuthFile || "",
           cpa_base_url: appConfig.cliproxyApiBaseUrl || "",
+          ip_address: ipInfo?.ip || "unknown",
+          ip_country: ipInfo?.country || "unknown",
+          ip_city: ipInfo?.city || "unknown",
+          ip_isp: ipInfo?.isp || "unknown",
+          ip_is_residential: ipInfo?.isResidential ? 1 : 0,
           status: "active",
         });
 
