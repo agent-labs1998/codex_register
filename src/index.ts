@@ -8,6 +8,7 @@ import {LocalDB} from "./local-db.js";
 import {WorkerScheduler} from "./worker-scheduler.js";
 import {runConcurrentRegistration} from "./concurrent-registration.js";
 import {proxyFetch} from "./proxy-fetch.js";
+import {getIpInfo} from "./ip-detect.js";
 
 async function cancelHeroSmsActivationById(activationId: string): Promise<void> {
     const apiKey = String(appConfig.heroSMSApiKey ?? "").trim();
@@ -119,6 +120,18 @@ async function runOnce(): Promise<void> {
                 throw new Error("--codex-cpa 不传 --phone 时需要配置 heroSMSApiKey 自动 phone signup");
             }
             console.log(`[codex-cpa] [0] 未传 --phone，自动 phone signup 注册新号`);
+
+            // 显示当前使用的 IP（通过代理检测出口 IP）
+            try {
+                const ipInfo = await getIpInfo();
+                const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+                const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
+                const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
+                console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
+            } catch (error) {
+                console.warn(`[IP] 检测失败: ${(error as Error).message}`);
+            }
+
             const MAX_PHONE_TRIES = 8;
             let lastErr: unknown = null;
             for (let phoneTry = 1; phoneTry <= MAX_PHONE_TRIES; phoneTry += 1) {
