@@ -911,6 +911,18 @@ async function main() {
 
             try {
               if (workflowName === "codex-cpa-register") {
+                // 显示当前使用的 IP（通过代理检测出口 IP）
+                try {
+                  const { getIpInfo } = await import("./ip-detect.js");
+                  const ipInfo = await getIpInfo();
+                  const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+                  const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
+                  const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
+                  console.log(`[workflow] [IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
+                } catch (error) {
+                  console.warn(`[workflow] [IP] 检测失败: ${(error as Error).message}`);
+                }
+
                 // 使用新的接口，从外部注入资源
                 const smsBroker = appConfig.heroSMSApiKey ? createSMSBroker({
                   apiKey: appConfig.heroSMSApiKey,
