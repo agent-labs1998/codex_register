@@ -5,6 +5,7 @@ import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
 import { LocalDB } from "./local-db.js";
 import { randomUUID } from "node:crypto";
 import { getIpInfo, IpInfo } from "./ip-detect.js";
+import { proxyFetch } from "./proxy-fetch.js";
 
 export interface PhoneLease {
   phoneNumber: string;
@@ -230,7 +231,7 @@ export class ConcurrentPhonePool {
       }
 
       const url = `https://hero-sms.com/stubs/handler_api.php?api_key=${encodeURIComponent(apiKey)}&action=setStatus&id=${encodeURIComponent(phoneLease.activationId)}&status=8`;
-      const res = await fetch(url, { method: "GET" });
+      const res = await proxyFetch(url, { method: "GET" });
       const body = await res.text();
       const upper = body.toUpperCase();
 
@@ -275,7 +276,7 @@ async function cancelActivation(activationId: string): Promise<void> {
       return;
     }
     const url = `https://hero-sms.com/stubs/handler_api.php?api_key=${encodeURIComponent(apiKey)}&action=setStatus&id=${encodeURIComponent(activationId)}&status=8`;
-    const res = await fetch(url, { method: "GET" });
+    const res = await proxyFetch(url, { method: "GET" });
     const body = await res.text();
     console.log(`[concurrent] cancel activationId=${activationId} response=${body.slice(0, 120)}`);
   } catch (error) {

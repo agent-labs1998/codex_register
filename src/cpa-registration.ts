@@ -3,6 +3,7 @@ import { generateRandomDeviceProfile } from "./device-profile.js";
 import { OpenAIClient } from "./openai.js";
 import { SMSActivationLease } from "./sms/index.js";
 import { getIpInfo } from "./ip-detect.js";
+import { proxyFetch } from "./proxy-fetch.js";
 
 export interface RegistrationTask {
   workerId: string;
@@ -40,7 +41,7 @@ async function cancelActivation(activationId: string): Promise<void> {
   }
   const url = `https://hero-sms.com/stubs/handler_api.php?api_key=${encodeURIComponent(apiKey)}&action=setStatus&id=${encodeURIComponent(activationId)}&status=8`;
   try {
-    const res = await fetch(url, { method: "GET" });
+    const res = await proxyFetch(url, { method: "GET" });
     const body = await res.text();
     const upper = body.toUpperCase();
     if (upper.includes("ACCESS_CANCEL") || upper.includes("ACCESS_READY") || upper.includes("BAD_STATUS") || upper.includes("NO_ACTIVATION")) {

@@ -1,6 +1,7 @@
 import {appConfig} from "../config.js";
 import {generateEmailName} from "./generate-email-name.js";
 import {findLatestVerificationMail} from "./verification-matcher.js";
+import {proxyFetch} from "../proxy-fetch.js";
 
 const POLL_ATTEMPTS = 20;
 const POLL_INTERVAL_MS = 3000;
@@ -47,7 +48,7 @@ async function createAddress(): Promise<CreateAddressResponse> {
     const adminPassword = getAdminPassword();
     const name = generateEmailName();
 
-    const response = await fetch(`https://${workerDomain}/admin/new_address`, {
+    const response = await proxyFetch(`https://${workerDomain}/admin/new_address`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -82,7 +83,7 @@ async function fetchMailsViaAdmin(address: string): Promise<ParsedMail[]> {
     url.searchParams.set("offset", "0");
     url.searchParams.set("address", address);
 
-    const response = await fetch(url.toString(), {
+    const response = await proxyFetch(url.toString(), {
         method: "GET",
         headers: {
             "x-admin-auth": adminPassword,

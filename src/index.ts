@@ -7,6 +7,7 @@ import {startHeroSmsPatrolLoop} from "./sms/hero-patrol.js";
 import {LocalDB} from "./local-db.js";
 import {WorkerScheduler} from "./worker-scheduler.js";
 import {runConcurrentRegistration} from "./concurrent-registration.js";
+import {proxyFetch} from "./proxy-fetch.js";
 
 async function cancelHeroSmsActivationById(activationId: string): Promise<void> {
     const apiKey = String(appConfig.heroSMSApiKey ?? "").trim();
@@ -15,7 +16,7 @@ async function cancelHeroSmsActivationById(activationId: string): Promise<void> 
     }
     const url = `https://hero-sms.com/stubs/handler_api.php?api_key=${encodeURIComponent(apiKey)}&action=setStatus&id=${encodeURIComponent(activationId)}&status=8`;
     try {
-        const res = await fetch(url, {method: "GET"});
+        const res = await proxyFetch(url, {method: "GET"});
         const body = await res.text();
         const upper = body.toUpperCase();
         if (upper.includes("ACCESS_CANCEL") || upper.includes("ACCESS_READY") || upper.includes("BAD_STATUS") || upper.includes("NO_ACTIVATION")) {

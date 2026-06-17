@@ -3,6 +3,7 @@ import { runCpaRegistration, RegistrationTask, CodexCpaResult } from "./cpa-regi
 import { appConfig } from "./config.js";
 import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
 import { randomUUID } from "node:crypto";
+import { proxyFetch } from "./proxy-fetch.js";
 
 export type WorkerStatus =
   | "idle"
@@ -272,7 +273,7 @@ export class WorkerScheduler {
     }
     const url = `https://hero-sms.com/stubs/handler_api.php?api_key=${encodeURIComponent(apiKey)}&action=setStatus&id=${encodeURIComponent(activationId)}&status=8`;
     try {
-      const res = await fetch(url, { method: "GET" });
+      const res = await proxyFetch(url, { method: "GET" });
       const body = await res.text();
       console.log(`[scheduler] cancel activationId=${activationId} response=${body.slice(0, 120)}`);
     } catch (error) {

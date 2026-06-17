@@ -1,4 +1,5 @@
 import {appConfig} from "../config.js";
+import {proxyFetch} from "../proxy-fetch.js";
 
 interface ActiveActivationSnapshot {
     activationId: string;
@@ -89,7 +90,7 @@ async function fetchAllActiveActivations(apiKey: string): Promise<ActiveActivati
 
     while (true) {
         const url = `${HERO_SMS_API_BASE}?action=getActiveActivations&api_key=${encodeURIComponent(apiKey)}&start=${start}&limit=${limit}`;
-        const res = await fetch(url, {method: "GET"});
+        const res = await proxyFetch(url, {method: "GET"});
         const body = await res.text();
 
         let payload: any = {};
@@ -126,7 +127,7 @@ async function fetchAllActiveActivations(apiKey: string): Promise<ActiveActivati
 async function cancelActivationById(apiKey: string, activationId: string): Promise<void> {
     const url = `${HERO_SMS_API_BASE}?action=setStatus&id=${encodeURIComponent(activationId)}&status=8&api_key=${encodeURIComponent(apiKey)}`;
     try {
-        const res = await fetch(url, {method: "GET"});
+        const res = await proxyFetch(url, {method: "GET"});
         const body = await res.text();
         const upper = body.toUpperCase();
         if (upper.includes("ACCESS_CANCEL") || upper.includes("ACCESS_READY") || upper.includes("OTP_RECEIVED") || upper.includes("NO_ACTIVATION")) {
