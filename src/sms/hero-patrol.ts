@@ -1,5 +1,4 @@
 import {appConfig} from "../config.js";
-import {proxyFetch} from "../proxy-fetch.js";
 
 interface ActiveActivationSnapshot {
     activationId: string;
