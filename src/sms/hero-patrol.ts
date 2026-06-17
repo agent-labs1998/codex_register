@@ -66,6 +66,7 @@ export function startHeroSmsPatrolLoop(): {stop: () => void} {
 
 async function patrolOnce(apiKey: string, releaseMs: number): Promise<void> {
     const activations = await fetchAllActiveActivations(apiKey);
+    console.log(`[巡视器] 扫描到 ${activations.length} 个活跃号码`);
     if (!activations.length) {
         return;
     }
@@ -74,11 +75,13 @@ async function patrolOnce(apiKey: string, releaseMs: number): Promise<void> {
     for (const activation of activations) {
         const activationTimeMs = parseActivationTimeMs(activation.activationTime);
         const ageMs = activationTimeMs > 0 ? now - activationTimeMs : 0;
+        const ageSeconds = Math.floor(ageMs / 1000);
         if (ageMs < releaseMs) {
+            console.log(`[巡视器] +${activation.phoneNumber} 未超时 (${ageSeconds}s < ${releaseMs/1000}s)`);
             continue;
         }
 
-        console.log(`[巡视器] 发现超时号码 phone=+${activation.phoneNumber} activationId=${activation.activationId} ageMs=${ageMs} -> 尝试取消`);
+        console.log(`[巡视器] 发现超时号码 phone=+${activation.phoneNumber} activationId=${activation.activationId} age=${ageSeconds}s -> 尝试取消`);
         await cancelActivationById(apiKey, activation.activationId);
     }
 }
@@ -88,37 +91,42 @@ async function fetchAllActiveActivations(apiKey: string): Promise<ActiveActivati
     let start = 0;
     const limit = 200;
 
-    while (true) {
-        const url = `${HERO_SMS_API_BASE}?action=getActiveActivations&api_key=${encodeURIComponent(apiKey)}&start=${start}&limit=${limit}`;
-        const res = await proxyFetch(url, {method: "GET"});
-        const body = await res.text();
+    try {
+      while (true) {
+          const url = `${HERO_SMS_API_BASE}?action=getActiveActivations&api_key=${encodeURIComponent(apiKey)}&start=${start}&limit=${limit}`;
+          const res = await proxyFetch(url, {method: "GET"});
+          const body = await res.text();
 
-        let payload: any = {};
-        try {
-            payload = JSON.parse(body);
-        } catch {
-            break;
-        }
+          let payload: any = {};
+          try {
+              payload = JSON.parse(body);
+          } catch {
+              console.warn(`[巡视器] JSON 解析失败: ${body.substring(0, 200)}`);
+              break;
+          }
 
-        const data: any[] = Array.isArray(payload?.data) ? payload.data : [];
-        for (const item of data) {
-            const activationId = String(item?.activationId ?? "").trim();
-            const phoneNumber = String(item?.phoneNumber ?? "").trim();
-            if (!activationId || !phoneNumber) {
-                continue;
-            }
-            results.push({
-                activationId,
-                phoneNumber,
-                activationTime: String(item?.activationTime ?? "").trim() || undefined,
-                activationStatus: String(item?.activationStatus ?? "").trim() || undefined,
-            });
-        }
+          const data: any[] = Array.isArray(payload?.data) ? payload.data : [];
+          for (const item of data) {
+              const activationId = String(item?.activationId ?? "").trim();
+              const phoneNumber = String(item?.phoneNumber ?? "").trim();
+              if (!activationId || !phoneNumber) {
+                  continue;
+              }
+              results.push({
+                  activationId,
+                  phoneNumber,
+                  activationTime: String(item?.activationTime ?? "").trim() || undefined,
+                  activationStatus: String(item?.activationStatus ?? "").trim() || undefined,
+              });
+          }
 
-        if (data.length < limit) {
-            break;
-        }
-        start += limit;
+          if (data.length < limit) {
+              break;
+          }
+          start += limit;
+      }
+    } catch (error) {
+      console.warn(`[巡视器] fetchAllActiveActivations 失败: ${(error as Error).message}`);
     }
 
     return results;
