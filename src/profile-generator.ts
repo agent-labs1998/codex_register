@@ -65,8 +65,50 @@ function mapCountryToLocale(countryCode: string): string {
     return appConfig.profileLocaleByCountry[normalized] ?? "en_US";
 }
 
+// 经典模式：使用固定英文名字池（与老版本一致，避免风控）
+const CLASSIC_FIRST_NAMES = [
+    "Ethan", "Noah", "Liam", "Mason", "Lucas",
+    "Logan", "Owen", "Ryan", "Leo", "Adam",
+    "Ella", "Ava", "Mia", "Luna", "Chloe",
+    "Grace", "Ruby", "Nora", "Ivy", "Sofia",
+];
+const CLASSIC_LAST_NAMES = [
+    "Smith", "Brown", "Taylor", "Walker", "Wilson",
+    "Clark", "Hall", "Young", "Allen", "King",
+    "Scott", "Green", "Baker", "Adams", "Turner",
+];
+
+function pick<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomInt(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function generateClassicProfile(): {name: string; birthdate: string} {
+    const age = randomInt(appConfig.profileAgeMin, appConfig.profileAgeMax);
+    const today = new Date();
+    const birthYear = today.getFullYear() - age;
+    const birthMonth = randomInt(1, 12);
+    const maxDay = new Date(birthYear, birthMonth, 0).getDate();
+    const birthDay = randomInt(1, maxDay);
+    const birthdate = `${birthYear}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`;
+
+    return {
+        name: `${pick(CLASSIC_FIRST_NAMES)} ${pick(CLASSIC_LAST_NAMES)}`,
+        birthdate,
+    };
+}
+
 export async function resolveProfileLocale(): Promise<{locale: string; source: string; country?: string}> {
     const requested = String(appConfig.profileLocale ?? "auto").trim();
+
+    // 经典模式：使用固定英文名字池，不依赖 IP 检测
+    if (requested.toLowerCase() === "classic") {
+        return {locale: "classic", source: "config"};
+    }
+
     if (requested && requested.toLowerCase() !== "auto") {
         return {locale: requested, source: "config"};
     }
@@ -85,6 +127,13 @@ export async function resolveProfileLocale(): Promise<{locale: string; source: s
 
 export async function generateRegistrationProfile(): Promise<{name: string; birthdate: string}> {
     const {locale} = await resolveProfileLocale();
+
+    // 经典模式：使用固定英文名字池
+    if (locale === "classic") {
+        console.log(`[profile] 使用经典模式（固定英文名字池）`);
+        return generateClassicProfile();
+    }
+
     const faker = resolveFakerByLocale(locale);
     const birthdate = randomBirthdate(appConfig.profileAgeMin, appConfig.profileAgeMax);
     return {
