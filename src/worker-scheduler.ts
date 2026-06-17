@@ -54,6 +54,7 @@ export class WorkerScheduler {
       country: appConfig.heroSMSCountry,
       countries: appConfig.heroSMSCountries,
       priceTiers: appConfig.heroSMSPriceTiers,
+      proxyUrl: appConfig.defaultProxyUrl,
     }) : undefined;
 
     if (!smsBroker) {

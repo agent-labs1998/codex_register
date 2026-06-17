@@ -58,6 +58,7 @@ const smsBroker = appConfig.heroSMSApiKey ? createSMSBroker({
     country: appConfig.heroSMSCountry,
     countries: appConfig.heroSMSCountries,
     priceTiers: appConfig.heroSMSPriceTiers,
+    proxyUrl: appConfig.defaultProxyUrl,  // 传递代理
 }) : undefined
 
 async function runOnce(): Promise<void> {
@@ -877,6 +878,7 @@ async function main() {
                   country: appConfig.heroSMSCountry,
                   countries: appConfig.heroSMSCountries,
                   priceTiers: appConfig.heroSMSPriceTiers,
+                  proxyUrl: appConfig.defaultProxyUrl,
                 }) : undefined;
 
                 if (!smsBroker) {

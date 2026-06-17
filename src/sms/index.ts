@@ -11,6 +11,7 @@ type HeroSMSBrokerOption = {
   pollIntervalMs: number;
   // 价格阶梯(从低到高)。如果没设置,就用 maxPrice 单点
   priceTiers?: number[];
+  proxyUrl?: string;  // 代理 URL（可选）
 }
 
 /**
@@ -37,6 +38,7 @@ export const createSMSBroker = (option: HeroSMSBrokerOption) => {
 
   const heroProvider = createHeroSmsProvider({
     apiKey: option.apiKey,
+    proxyUrl: option.proxyUrl,  // 传递代理 URL
     defaultRequestOptions: {
       service: "dr",
       country: countries[0],
