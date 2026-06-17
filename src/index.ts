@@ -791,7 +791,7 @@ async function main() {
           tokenOutPath,
         });
 
-        // 获取并显示 IP 信息（通过代理检测出口 IP）
+        // 设置全局代理 dispatcher
         const { setGlobalDispatcher } = await import("undici");
         const { createProxyDispatcher } = await import("./proxy-dispatcher.js");
         const proxyUrl = appConfig.defaultProxyUrl;
@@ -799,17 +799,13 @@ async function main() {
           setGlobalDispatcher(createProxyDispatcher(proxyUrl, true));
         }
 
-        const { getIpInfo } = await import("./ip-detect.js");
-        const ipInfo = await getIpInfo();
-        const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
-        const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
-        const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
-
+        // 显示启动信息（不检测 IP，IP 在 worker 级别检测）
         console.log(`\n${"=".repeat(60)}`);
         console.log(`[workflow] 启动 workflow=${workflowName} runId=${runId}`);
         console.log(`[workflow] 目标: count=${count} concurrency=${concurrency}`);
-        console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
-        console.log(`[IP] 类型: ${residentialTag} ${proxyTag} ${mobileTag}`);
+        if (proxyUrl) {
+          console.log(`[proxy] ${proxyUrl.substring(0, 40)}...`);
+        }
         console.log(`${"=".repeat(60)}\n`);
 
         let successCount = 0;

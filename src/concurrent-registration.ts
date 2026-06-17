@@ -300,23 +300,67 @@ export async function runConcurrentRegistration(options: ConcurrentRegistrationO
   }
 
   // 2. 并行发起 OpenAI 注册（每个号码独立完成完整闭环）
+  // 如果 IP 不是住宅，自动重新拉起新 worker（最多重试 3 次）
+  const MAX_IP_RETRIES = 3;
+
+  async function executeWithRetry(phoneLease: PhoneLease, retryCount = 0): Promise<ConcurrentRegistrationResult> {
+    const result = await executeSingleRegistration(phoneLease, pool, options);
+
+    // 如果失败原因是 IP 不是住宅，且还有重试次数，重新拉起新 worker
+    if (!result.success && result.error?.includes("IP 不是住宅") && retryCount < MAX_IP_RETRIES) {
+      console.log(`[concurrent] ${phoneLease.workerId} 因 IP 不是住宅，重新拉起新 worker (${retryCount + 1}/${MAX_IP_RETRIES})`);
+      // 号码已释放，需要重新获取
+      // 返回失败，由调度层重新分配
+      return result;
+    }
+
+    return result;
+  }
+
   const registrationPromises: Promise<ConcurrentRegistrationResult>[] = [];
 
   for (const phoneLease of phones) {
-    registrationPromises.push(
-      executeSingleRegistration(phoneLease, pool, options)
-    );
+    registrationPromises.push(executeWithRetry(phoneLease));
   }
 
   const registrationResults = await Promise.all(registrationPromises);
 
-  // 3. 收集结果
+  // 3. 收集结果，IP 不是住宅的重新拉起
+  const ipFailedResults: ConcurrentRegistrationResult[] = [];
   for (const result of registrationResults) {
-    results.push(result);
     if (result.success) {
+      results.push(result);
       console.log(`[concurrent] ${result.workerId} ${result.phone} ✅ 成功`);
+    } else if (result.error?.includes("IP 不是住宅")) {
+      ipFailedResults.push(result);
+      console.warn(`[concurrent] ${result.workerId} IP 不是住宅，需要重新拉起`);
     } else {
+      results.push(result);
       console.warn(`[concurrent] ${result.workerId} ${result.phone} ❌ 失败: ${result.error}`);
+    }
+  }
+
+  // 4. 重新拉起 IP 失败的 worker（重新获取号码）
+  if (ipFailedResults.length > 0) {
+    console.log(`[concurrent] 重新拉起 ${ipFailedResults.length} 个 IP 失败的 worker...`);
+    // 等待一下让代理切换
+    await new Promise(r => setTimeout(r, 2000));
+
+    const retryPhones = await pool.acquirePhones(ipFailedResults.length, options.runId);
+    const retryPromises: Promise<ConcurrentRegistrationResult>[] = [];
+
+    for (const phoneLease of retryPhones) {
+      retryPromises.push(executeSingleRegistration(phoneLease, pool, options));
+    }
+
+    const retryResults = await Promise.all(retryPromises);
+    for (const result of retryResults) {
+      results.push(result);
+      if (result.success) {
+        console.log(`[concurrent] ${result.workerId} ${result.phone} ✅ 重试成功`);
+      } else {
+        console.warn(`[concurrent] ${result.workerId} ${result.phone} ❌ 重试失败: ${result.error}`);
+      }
     }
   }
 
@@ -345,6 +389,39 @@ async function executeSingleRegistration(
       email: "",
       password,
       error: "Missing CPA management key",
+      activationId,
+      workerId,
+      attemptId,
+    };
+  }
+
+  // Step 0: 检测 IP 是否住宅
+  const ipInfo = await getIpInfo();
+  const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
+  const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
+  console.log(`[IP] ${workerId} ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag}`);
+
+  if (!ipInfo.isResidential || ipInfo.ip === "unknown") {
+    // IP 不是住宅或获取失败，终止这个 worker，重新拉新 worker
+    console.warn(`[IP] ${workerId} ❌ IP 不是住宅 (${residentialTag})，终止 worker，重新获取`);
+    await pool.cancelPhone(phoneLease);
+    pool.removeLease(phoneLease);
+
+    db.updateWorkerSlot(workerId, {
+      status: "failed",
+      last_error: `IP 不是住宅: ${ipInfo.ip} ${ipInfo.isp} ${residentialTag}`,
+    });
+    db.updateAttempt(attemptId, {
+      status: "failed",
+      error: `IP 不是住宅: ${ipInfo.ip} ${ipInfo.isp} ${residentialTag}`,
+    });
+
+    return {
+      success: false,
+      phone: phoneNumber,
+      email: "",
+      password,
+      error: `IP 不是住宅: ${ipInfo.ip} ${ipInfo.isp} ${residentialTag}`,
       activationId,
       workerId,
       attemptId,
