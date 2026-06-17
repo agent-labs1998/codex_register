@@ -1,6 +1,9 @@
 // IP 地址检测模块 - 使用 ip-api.com（免费，无需 API key）
 // 限制：每分钟 45 次请求
 
+import { appConfig } from "./config.js";
+import { proxyFetch } from "./proxy-fetch.js";
+
 export interface IpInfo {
   ip: string;
   country: string;
@@ -23,6 +26,10 @@ export async function getIpInfo(): Promise<IpInfo> {
     return cachedIpInfo;
   }
 
+  // 根据配置决定使用代理还是直连
+  const proxyUrl = appConfig.defaultProxyUrl?.trim();
+  const useProxy = !!proxyUrl;
+
   // 尝试多个 API，避免单点失败
   const apis = [
     { url: "http://ip-api.com/json/?fields=66846719", parser: parseIpApi },
@@ -32,10 +39,14 @@ export async function getIpInfo(): Promise<IpInfo> {
 
   for (const api of apis) {
     try {
-      const res = await fetch(api.url, { signal: AbortSignal.timeout(8000) });
+      // 如果配置了代理，使用 proxyFetch；否则使用原生 fetch
+      const res = useProxy
+        ? await proxyFetch(api.url, { signal: AbortSignal.timeout(8000) })
+        : await fetch(api.url, { signal: AbortSignal.timeout(8000) });
       const data = await res.json();
       cachedIpInfo = api.parser(data);
       if (cachedIpInfo.ip && cachedIpInfo.ip !== "unknown") {
+        console.log(`[IP] 检测方式: ${useProxy ? '通过代理' : '直连'}`);
         return cachedIpInfo;
       }
     } catch {
