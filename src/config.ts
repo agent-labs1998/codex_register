@@ -61,6 +61,7 @@ export interface AppConfig {
     heroSMSPriceTiers?: number[];
     heroSMSPollAttempts: number;
     heroSMSPollIntervalMs: number;
+    heroSMSProxy: string;
     cliproxyApiAutoUploadAuth: boolean;
     cliproxyApiBaseUrl: string;
     cliproxyApiManagementKey: string;
@@ -96,6 +97,7 @@ const DEFAULT_CONFIG: AppConfig = {
     heroSMSMaxPrice: 0.05,
     heroSMSPollAttempts: 10,
     heroSMSPollIntervalMs: 3000,
+    heroSMSProxy: "",
     cliproxyApiAutoUploadAuth: false,
     cliproxyApiBaseUrl: "http://localhost:8317",
     cliproxyApiManagementKey: "",
@@ -264,6 +266,10 @@ function loadConfig(): AppConfig {
           typeof parsed.heroSMSPollIntervalMs === "number"
             ? parsed.heroSMSPollIntervalMs
             : DEFAULT_CONFIG.heroSMSPollIntervalMs,
+        heroSMSProxy:
+          typeof parsed.heroSMSProxy === "string"
+            ? parsed.heroSMSProxy
+            : DEFAULT_CONFIG.heroSMSProxy,
         cliproxyApiAutoUploadAuth: normalizeBoolean(
             parsed.cliproxyApiAutoUploadAuth,
             DEFAULT_CONFIG.cliproxyApiAutoUploadAuth,
