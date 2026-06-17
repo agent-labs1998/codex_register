@@ -81,8 +81,8 @@ export function startHeroSmsPatrolLoop(): {stop: () => void} {
 
     let running = true;
     const POLL_INTERVAL_MS = 25_000; // 25 秒巡视一次，避免频繁调用 API
-    // HeroSMS 需要 120 秒后才能释放号码
-    const SMS_RELEASE_MS = 120_000;
+    // HeroSMS 需要 130 秒后才能释放号码（比程序的 120 秒多 10 秒缓冲）
+    const SMS_RELEASE_MS = 130_000;
 
     const loop = (async () => {
         while (running) {
@@ -114,34 +114,42 @@ async function patrolOnce(apiKey: string, releaseMs: number): Promise<void> {
     const now = Date.now();
     let cancelledCount = 0;
     let skippedCount = 0;
+    let receivedCodeCount = 0;
 
     for (const activation of activations) {
-        // 检查状态是否可取消
-        if (!isCancellableStatus(activation.activationStatus)) {
-            console.log(`[巡视器] +${activation.phoneNumber} 状态 ${activation.activationStatus} 不可取消（已收到验证码或已完成）`);
-            skippedCount++;
-            continue;
-        }
-
         const activationTimeMs = parseActivationTimeMs(activation.activationTime);
         const ageMs = activationTimeMs > 0 ? now - activationTimeMs : 0;
         const ageSeconds = Math.floor(ageMs / 1000);
 
-        // 检查是否超过最小激活期（120秒）
-        if (ageMs < releaseMs) {
-            const waitSeconds = Math.ceil((releaseMs - ageMs) / 1000);
-            console.log(`[巡视器] +${activation.phoneNumber} 需等待 ${waitSeconds}秒 (已 ${ageSeconds}s < ${releaseMs/1000}s)`);
+        // 检查状态是否可取消
+        if (!isCancellableStatus(activation.activationStatus)) {
+            // 已收到验证码（状态 2）的号码，明确提示，不做任何操作
+            if (activation.activationStatus === "2") {
+                console.log(`[巡视器] ✅ +${activation.phoneNumber} 已收到验证码 (status=2, age=${ageSeconds}s) - 保留，不取消`);
+                receivedCodeCount++;
+            } else {
+                console.log(`[巡视器] ⚪ +${activation.phoneNumber} 状态 ${activation.activationStatus} 不可取消（已完成或已取消）`);
+            }
             skippedCount++;
             continue;
         }
 
-        console.log(`[巡视器] 发现可取消号码 phone=+${activation.phoneNumber} activationId=${activation.activationId} age=${ageSeconds}s status=${activation.activationStatus} -> 尝试取消`);
+        // 检查是否超过最小激活期（130秒）
+        if (ageMs < releaseMs) {
+            const waitSeconds = Math.ceil((releaseMs - ageMs) / 1000);
+            console.log(`[巡视器] ⏳ +${activation.phoneNumber} 需等待 ${waitSeconds}秒 (已 ${ageSeconds}s < ${releaseMs/1000}s) - 未超时，保留`);
+            skippedCount++;
+            continue;
+        }
+
+        // 超过 130 秒且未收到验证码，取消
+        console.log(`[巡视器] ❌ +${activation.phoneNumber} 超时且未收到验证码 (age=${ageSeconds}s, status=${activation.activationStatus}) -> 尝试取消`);
         await cancelActivationById(apiKey, activation.activationId);
         cancelledCount++;
     }
 
-    if (cancelledCount > 0 || skippedCount > 0) {
-        console.log(`[巡视器] 本轮扫描完成: 可取消=${cancelledCount}, 跳过=${skippedCount}`);
+    if (cancelledCount > 0 || skippedCount > 0 || receivedCodeCount > 0) {
+        console.log(`[巡视器] 本轮扫描完成: 已收码=${receivedCodeCount}, 跳过=${skippedCount}, 取消=${cancelledCount}`);
     }
 }
 

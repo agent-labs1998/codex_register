@@ -168,8 +168,8 @@ async function runOnce(): Promise<void> {
                 console.log(`[codex-cpa] 取到 ${phoneNumber}`);
                 try {
                     const sigRes = await signupClient.authPhoneSignupHTTP(phoneNumber, async () => {
-                        console.log(`[codex-cpa] 等待 OTP (巡视释放模式: 65s deadline)...`);
-                        const SMS_RELEASE_DEADLINE_MS = 65_000;
+                        console.log(`[codex-cpa] 等待 OTP (巡视释放模式: 120s deadline)...`);
+                        const SMS_RELEASE_DEADLINE_MS = 120_000;
                         const code = await Promise.race([
                             lease.waitForVerificationCode().then((v) => v.code),
                             new Promise<never>((_, reject) => {
