@@ -905,7 +905,7 @@ async function main() {
           // 串行模式（原有逻辑）
           for (let i = 1; i <= count; i++) {
             console.log(`\n${"=".repeat(60)}`);
-            console.log(`[workflow] 第 ${i}/${count} 次`);
+            console.log(`[workflow] 第 ${i}/${count} 次 | ✅成功: ${successCount} ❌失败: ${failureCount} 剩余: ${count - i}`);
             console.log(`${"=".repeat(60)}\n`);
 
             const attemptId = db.createAttempt(runId);

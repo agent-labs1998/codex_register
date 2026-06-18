@@ -80,6 +80,9 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   // Step 1: Phone signup（注册 OpenAI 触发发短信 + 等验证码一体化）
   reportStatus("registering");
+  console.log(`\n${"═".repeat(60)}`);
+  console.log(`[注册] ${workerId} 号码=${phoneNumber} 邮箱=${bindEmail}`);
+  console.log(`${"═".repeat(60)}`);
 
   const signupClient = new OpenAIClient({
     email: undefined,
@@ -152,10 +155,10 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   let authorizeUrl: string;
   try {
-    console.log(`[cpa-registration] ${workerId} [1] CPA codex-auth-url`);
+    console.log(`[CPA] ① 获取授权 URL`);
     const result = await requestCodexAuthUrl(cpaBase, cpaKey);
     authorizeUrl = result.authorizeUrl;
-    console.log(`[cpa-registration] ${workerId} authorize: ${authorizeUrl.slice(0, 120)}...`);
+    console.log(`[CPA] ① ✓ 授权 URL 已获取`);
   } catch (error) {
     reportStatus("failed");
     return {
@@ -182,9 +185,9 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   let callbackUrl: string;
   try {
-    console.log(`[cpa-registration] ${workerId} [2] 走 OAuth 登录`);
+    console.log(`[CPA] ② OAuth 登录`);
     callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
-    console.log(`[cpa-registration] ${workerId} callback: ${callbackUrl.slice(0, 120)}...`);
+    console.log(`[CPA] ② ✓ OAuth 登录完成`);
   } catch (error) {
     reportStatus("failed");
     return {
@@ -203,13 +206,13 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   reportStatus("cpa_submit");
 
   try {
-    console.log(`[cpa-registration] ${workerId} [3] 提交 callback 给 CPA`);
+    console.log(`[CPA] ③ 提交 callback 入库`);
     const { status, body } = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl);
-    console.log(`[cpa-registration] ${workerId} CPA status=${status}`);
-    console.log(`[cpa-registration] ${workerId} CPA body: ${body.slice(0, 500)}`);
     if (status >= 300) {
+      console.log(`[CPA] ③ ✗ 入库失败 status=${status}`);
       throw new Error(`CPA oauth-callback failed: status=${status}`);
     }
+    console.log(`[CPA] ③ ✓ 入库成功 status=${status}`);
   } catch (error) {
     reportStatus("failed");
     return {
@@ -228,7 +231,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   reportStatus("waiting_email_otp");
 
   try {
-    console.log(`[cpa-registration] ${workerId} 从 CPA 拉刚入库的 codex auth 文件...`);
+    console.log(`[CPA] ④ 拉取 auth 文件...`);
     const emailLc = bindEmail.toLowerCase();
     const candidates = [
       `codex-${emailLc}.json`,
@@ -252,7 +255,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
       lastFileCount = files.length;
       latest = matchFile(files);
       if (latest) {
-        console.log(`[cpa-registration] ${workerId} 精确匹配文件: ${latest.name} (attempt=${attempt})`);
+        console.log(`[CPA] ④ ✓ 匹配到: ${latest.name} (attempt=${attempt})`);
         break;
       }
       if (attempt < POLL_MAX_ATTEMPTS) {
@@ -291,7 +294,11 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     }
 
     reportStatus("success");
-    console.log(`[cpa-registration] ${workerId} 从 CPA 拿到 access_token (${tok.length} 字符, 文件=${latest.name})`);
+    console.log(`${"═".repeat(60)}`);
+    console.log(`✅ 注册成功 | ${phoneNumber} | ${bindEmail}`);
+    console.log(`✅ Token: ${tok.slice(0, 30)}... (${tok.length} 字符)`);
+    console.log(`✅ Auth 文件: ${latest.name}`);
+    console.log(`${"═".repeat(60)}\n`);
 
     return {
       status: "ok",
