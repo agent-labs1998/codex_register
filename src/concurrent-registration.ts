@@ -482,59 +482,11 @@ async function executeSingleRegistration(
     };
   }
 
-  // Step 2: 等待 SMS 验证码
-  console.log(`[concurrent] ${workerId} 等待验证码...`);
+  // Step 2: 注册 OpenAI（触发发短信）+ 等待 SMS 验证码
+  console.log(`[concurrent] ${workerId} 注册 OpenAI...`);
 
-  // Worker 只等待 65 秒，超时后立即释放 worker，重新注册新 worker
-  // 巡视器会在后台持续检查，120 秒后释放号码
   const SMS_WAIT_TIMEOUT_MS = 65_000;
 
-  let smsCode: string | null;
-  try {
-    smsCode = await Promise.race([
-      lease.waitForVerificationCode().then(v => v.code),
-      new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), SMS_WAIT_TIMEOUT_MS);
-      }),
-    ]);
-  } catch (error) {
-    smsCode = null;
-  }
-
-  if (!smsCode) {
-    // 65 秒内未收到验证码，立即释放 worker
-    // 号码会在巡视器中 120 秒后释放
-    pool.removeLease(phoneLease);
-
-    db.updateWorkerSlot(workerId, {
-      status: "timed_out",
-      last_error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
-    });
-
-    db.updateAttempt(attemptId, {
-      status: "failed",
-      error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
-    });
-
-    return {
-      success: false,
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
-      activationId,
-      workerId,
-      attemptId,
-    };
-  }
-
-  console.log(`[concurrent] ${workerId} 收到验证码: ${smsCode}`);
-
-  // 实时更新状态
-  db.updateWorkerSlot(workerId, { status: "sms_received" });
-  db.updateAttempt(attemptId, { status: "sms_received" });
-
-  // Step 3: 用验证码完成 phone signup
   db.updateWorkerSlot(workerId, { status: "registering" });
   db.updateAttempt(attemptId, { status: "registering" });
 
@@ -546,20 +498,45 @@ async function executeSingleRegistration(
     smsBroker: undefined,
   });
 
+  let smsCode: string | null = null;
+
   try {
-    await signupClient.authPhoneSignupHTTP(phoneNumber, async () => smsCode);
+    await signupClient.authPhoneSignupHTTP(phoneNumber, async () => {
+      console.log(`[concurrent] ${workerId} 等待验证码...`);
+      db.updateWorkerSlot(workerId, { status: "waiting_sms" });
+      db.updateAttempt(attemptId, { status: "waiting_sms" });
+
+      const result = await Promise.race([
+        lease.waitForVerificationCode().then(v => v.code),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), SMS_WAIT_TIMEOUT_MS);
+        }),
+      ]);
+
+      if (!result) {
+        throw new Error(`SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms`);
+      }
+
+      console.log(`[concurrent] ${workerId} 收到验证码: ${result}`);
+      db.updateWorkerSlot(workerId, { status: "sms_received" });
+      db.updateAttempt(attemptId, { status: "sms_received" });
+      smsCode = result;
+      return result;
+    });
+
     console.log(`[concurrent] ${workerId} phone signup 成功`);
   } catch (error) {
+    const errMsg = (error as Error).message;
     pool.removeLease(phoneLease);
 
     db.updateWorkerSlot(workerId, {
-      status: "failed",
-      last_error: `Phone signup failed: ${(error as Error).message}`,
+      status: errMsg.includes("timeout") ? "timed_out" : "failed",
+      last_error: `Phone signup failed: ${errMsg}`,
     });
 
     db.updateAttempt(attemptId, {
       status: "failed",
-      error: `Phone signup failed: ${(error as Error).message}`,
+      error: `Phone signup failed: ${errMsg}`,
     });
 
     return {
@@ -567,7 +544,7 @@ async function executeSingleRegistration(
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: `Phone signup failed: ${(error as Error).message}`,
+      error: `Phone signup failed: ${errMsg}`,
       activationId,
       workerId,
       attemptId,
