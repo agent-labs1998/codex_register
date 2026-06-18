@@ -14,6 +14,8 @@ export function createProxyDispatcher(proxyUrl: string, allowInsecureTLS = false
             connect: {
                 rejectUnauthorized: !allowInsecureTLS,
             },
+            keepAliveTimeout: 0,
+            keepAliveMaxTimeout: 0,
         });
     }
 
@@ -34,7 +36,11 @@ export function createProxyDispatcher(proxyUrl: string, allowInsecureTLS = false
                 .catch((error) => callback(error instanceof Error ? error : new Error(String(error)), null));
         }) as NonNullable<ConstructorParameters<typeof Agent>[0]>["connect"];
 
-        return new Agent({connect});
+        return new Agent({
+            connect,
+            keepAliveTimeout: 0,
+            keepAliveMaxTimeout: 0,
+        });
     }
 
     throw new Error(`不支持的代理协议: ${parsedProxyUrl.protocol}`);

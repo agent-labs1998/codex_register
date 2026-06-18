@@ -30,11 +30,12 @@ export async function getIpInfo(): Promise<IpInfo> {
   const proxyUrl = appConfig.defaultProxyUrl?.trim();
   const useProxy = !!proxyUrl;
 
-  // 尝试多个 API，避免单点失败
+  // 尝试多个 API，避免单点失败（加随机参数打破连接复用，确保并发时每个 Worker 拿到不同 IP）
+  const bust = Math.random().toString(36).slice(2);
   const apis = [
-    { url: "http://ip-api.com/json/?fields=66846719", parser: parseIpApi },
-    { url: "https://ipapi.co/json/", parser: parseIpApiCo },
-    { url: "https://ipinfo.io/json", parser: parseIpInfo },
+    { url: `http://ip-api.com/json/?fields=66846719&_t=${bust}`, parser: parseIpApi },
+    { url: `https://ipapi.co/json/?_t=${bust}`, parser: parseIpApiCo },
+    { url: `https://ipinfo.io/json?_t=${bust}`, parser: parseIpInfo },
   ];
 
   for (const api of apis) {
