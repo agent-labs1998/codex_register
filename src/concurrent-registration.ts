@@ -4,7 +4,7 @@ import { OpenAIClient } from "./openai.js";
 import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
 import { LocalDB } from "./local-db.js";
 import { randomUUID } from "node:crypto";
-import { getIpInfo, IpInfo } from "./ip-detect.js";
+import { getIpInfo, resetIpCache, IpInfo } from "./ip-detect.js";
 import { proxyFetch } from "./proxy-fetch.js";
 
 export interface PhoneLease {
@@ -396,6 +396,7 @@ async function executeSingleRegistration(
   }
 
   // Step 0: 检测 IP 是否住宅
+  resetIpCache();
   const ipInfo = await getIpInfo();
   const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
   const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
@@ -793,6 +794,7 @@ async function executeSingleRegistration(
     });
 
     // 获取当前 IP 详细信息
+    resetIpCache();
     const ipInfo = await getIpInfo();
     const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
 

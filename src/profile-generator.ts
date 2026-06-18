@@ -65,17 +65,47 @@ function mapCountryToLocale(countryCode: string): string {
     return appConfig.profileLocaleByCountry[normalized] ?? "en_US";
 }
 
-// 经典模式：使用固定英文名字池（与老版本一致，避免风控）
+// 经典模式：使用固定英文名字池
 const CLASSIC_FIRST_NAMES = [
     "Ethan", "Noah", "Liam", "Mason", "Lucas",
     "Logan", "Owen", "Ryan", "Leo", "Adam",
     "Ella", "Ava", "Mia", "Luna", "Chloe",
     "Grace", "Ruby", "Nora", "Ivy", "Sofia",
+    "James", "Oliver", "Benjamin", "Elijah", "William",
+    "Henry", "Alexander", "Daniel", "Michael", "Sebastian",
+    "Emma", "Charlotte", "Amelia", "Harper", "Evelyn",
+    "Abigail", "Emily", "Elizabeth", "Sofia", "Avery",
+    "Jackson", "Aiden", "Matthew", "Samuel", "David",
+    "Joseph", "Carter", "Jayden", "Luke", "Gabriel",
+    "Scarlett", "Victoria", "Madison", "Layla", "Penelope",
+    "Riley", "Zoey", "Nora", "Lily", "Eleanor",
+    "Hannah", "Lillian", "Addison", "Aubrey", "Ellie",
+    "Stella", "Natalie", "Zoe", "Leah", "Hazel",
+    "Violet", "Aurora", "Savannah", "Audrey", "Brooklyn",
+    "Bella", "Claire", "Skylar", "Lucy", "Paisley",
+    "Isaac", "Jack", "Wyatt", "Dylan", "Nathan",
 ];
 const CLASSIC_LAST_NAMES = [
     "Smith", "Brown", "Taylor", "Walker", "Wilson",
     "Clark", "Hall", "Young", "Allen", "King",
     "Scott", "Green", "Baker", "Adams", "Turner",
+    "Johnson", "Williams", "Jones", "Davis", "Miller",
+    "Moore", "Jackson", "Martin", "Lee", "Thompson",
+    "White", "Harris", "Lewis", "Robinson", "Clark",
+    "Rodriguez", "Lewis", "Lee", "Walker", "Hall",
+    "Allen", "Young", "Hernandez", "King", "Wright",
+    "Lopez", "Hill", "Scott", "Green", "Adams",
+    "Baker", "Gonzalez", "Nelson", "Carter", "Mitchell",
+    "Perez", "Roberts", "Turner", "Phillips", "Campbell",
+    "Parker", "Evans", "Edwards", "Collins", "Stewart",
+    "Sanchez", "Morris", "Rogers", "Reed", "Cook",
+    "Morgan", "Bell", "Murphy", "Bailey", "Rivera",
+    "Cooper", "Richardson", "Cox", "Howard", "Ward",
+    "Torres", "Peterson", "Gray", "Ramirez", "James",
+    "Watson", "Brooks", "Kelly", "Sanders", "Price",
+    "Bennett", "Wood", "Barnes", "Ross", "Henderson",
+    "Coleman", "Jenkins", "Perry", "Powell", "Long",
+    "Patterson", "Hughes", "Flores", "Washington", "Butler",
 ];
 
 function pick<T>(arr: T[]): T {

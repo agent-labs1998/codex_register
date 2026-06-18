@@ -217,10 +217,25 @@ export async function fetchSentinelToken(
     const generator = new SentinelGenerator(env);
     const reqToken = await generator.getRequirementsToken();
 
+    const hints = getDeviceClientHints(profile);
+
     const response = await options.fetch(options.reqEndpoint, {
         method: "POST",
         headers: {
+            "accept": "application/json",
+            "accept-language": profile.acceptLanguage,
             "content-type": "application/json",
+            "origin": "https://sentinel.openai.com",
+            "referer": "https://sentinel.openai.com/backend-api/sentinel/frame.html",
+            "sec-ch-ua": hints.secChUa,
+            "sec-ch-ua-full-version-list": hints.secChUaFullVersionList,
+            "sec-ch-ua-mobile": hints.secChUaMobile,
+            "sec-ch-ua-platform": hints.secChUaPlatform,
+            "sec-ch-ua-platform-version": hints.secChUaPlatformVersion,
+            "sec-ch-viewport-width": hints.secChViewportWidth,
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
             "user-agent": env.userAgent,
         },
         body: JSON.stringify({

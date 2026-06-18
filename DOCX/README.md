@@ -1,180 +1,114 @@
-# Codex-Register 项目文档库
+# Codex-Register 文档库
 
-## 📚 文档索引
+## 文档索引
 
-欢迎使用 codex-register 项目文档库。本文档库包含项目的完整分析和参考材料。
-
----
-
-## 📖 文档列表
-
-### 1. [项目分析文档.md](项目分析文档.md)
-**内容**：项目的完整技术分析
-**包含**：
-- 项目概述和功能介绍
-- 核心模块详细分析
-- 运行流程说明
-- 依赖包说明
-- 配置文件说明
-- 安全和隐私考虑
-- 故障排查指南
-
-**适用对象**：开发人员、系统管理员、项目维护者
+本文档库已按用途分类整理，共 7 个目录、40 个文档。
 
 ---
 
-### 2. [代码对应关系文档.md](代码对应关系文档.md)
-**内容**：代码文件的功能映射和架构说明
-**包含**：
-- 文件索引和功能映射
-- 核心类和函数详解
-- 数据流图
-- 模块依赖关系
-- 配置文件结构
-- 错误处理和日志标签
+## 目录结构
 
-**适用对象**：开发人员、代码审查者
+### 1. tasks/ — 任务书与任务报告（6 个）
 
----
-
-### 3. [快速参考手册.md](快速参考手册.md)
-**内容**：日常使用的快速参考
-**包含**：
-- 快速开始指南
-- 命令行参数速查
-- 常见使用场景
-- 配置快速参考
-- 故障排查速查
-- 性能调优建议
-- 安全最佳实践
-- 监控和日志
-
-**适用对象**：操作人员、日常使用者
-
----
-
-### 4. [文件树和统计.md](文件树和统计.md)
-**内容**：项目结构和统计数据
-**包含**：
-- 完整项目结构树
-- 文件统计和行数详情
-- 模块分类统计
-- 依赖包统计
-- 功能模块依赖图
-- 复杂度分析
-- 项目健康度评估
-- 性能指标
-
-**适用对象**：项目经理、技术负责人
-
----
-
-## 🎯 使用指南
-
-### 新用户入门
-1. 先阅读 **项目分析文档.md** 了解项目全貌
-2. 参考 **快速参考手册.md** 进行实际操作
-3. 遇到问题时查阅 **故障排查** 部分
-
-### 开发人员
-1. 阅读 **代码对应关系文档.md** 理解代码架构
-2. 参考 **文件树和统计.md** 了解项目结构
-3. 使用 **快速参考手册.md** 中的开发指南
-
-### 运维人员
-1. 重点阅读 **快速参考手册.md** 的运维部分
-2. 参考 **配置快速参考** 进行配置管理
-3. 使用 **监控和日志** 部分进行系统监控
-
-### 项目管理
-1. 查看 **文件树和统计.md** 了解项目规模
-2. 参考 **项目健康度评估** 了解质量状况
-3. 使用 **版本历史** 跟踪项目进展
-
----
-
-## 📊 项目快照
-
-| 指标 | 数值 |
+| 文档 | 说明 |
 |------|------|
-| 项目版本 | 1.0.7 |
-| 总文件数 | 37 个 |
-| 代码行数 | 8000+ 行 |
-| 核心模块 | 5 个 |
-| 文档数量 | 4 个 |
-| 支持邮箱 | 5 种 |
-| 支持代理 | SOCKS5/HTTP |
+| rework-plan.md | 返工审查报告 |
+| rework-completion-report.md | 返工完成报告 |
+| rework-deliverables.md | 返工交付物清单 |
+| rework-summary.md | 返工完成总结 |
+| rework-quick-reference.md | 返工后快速参考卡 |
+| task-report.md | 工业化升级任务报告书 |
 
 ---
 
-## 🔧 快速链接
+### 2. optimization/ — 优化方案与报告（6 个）
 
-### 常用命令
-```bash
-# 开发运行
-npm run dev -- --codex-cpa
-
-# 批量注册
-npm run batch
-
-# 检查账户
-npm run check
-
-# 构建项目
-npm run build
-```
-
-### 配置文件位置
-- 主配置：`config.json`
-- 示例配置：`config.example.json`
-- TypeScript 配置：`tsconfig.json`
-- NPM 配置：`package.json`
-
-### 日志标签速查
-- `[✅️]` - 成功
-- `[❌️]` - 失败
-- `[⚠️]` - 警告
-- `[POOL-RESULT]` - 池结果
+| 文档 | 说明 |
+|------|------|
+| all-optimizations-summary.md | 所有优化完成总结 |
+| P0-optimization-report.md | P0 优化完成报告 |
+| P0-optimization-summary.md | P0 优化完成总结 |
+| future-optimization-roadmap.md | 未来优化方向建议 |
+| sms-wait-logic-optimization.md | SMS 等待逻辑优化说明 |
+| sms-wait-logic-optimization-summary.md | SMS 等待逻辑优化完成总结 |
 
 ---
 
-## 📝 文档维护
+### 3. testing/ — 测试指南（5 个）
 
-### 文档更新频率
-- **项目分析文档**：随版本更新
-- **代码对应关系文档**：随代码变更更新
-- **快速参考手册**：季度更新
-- **文件树和统计**：每月更新
-
-### 文档反馈
-如需报告文档问题或建议改进，请在项目中创建 issue。
-
----
-
-## 📚 相关资源
-
-### 项目相关
-- 项目路径：`A:\Github\codex_register`
-- 源代码目录：`src/`
-- 配置文件：`config.json`
-- 文档目录：`DOCX/`（当前位置）
-
-### 外部资源
-- [OpenAI API 文档](https://platform.openai.com/docs)
-- [Playwright 文档](https://playwright.dev/)
-- [TypeScript 文档](https://www.typescriptlang.org/)
-- [Node.js 文档](https://nodejs.org/)
+| 文档 | 说明 |
+|------|------|
+| testing-guide.md | 功能测试指南 |
+| final-testing-guide.md | 最终测试指南 |
+| quick-start-testing.md | 快速开始测试 |
+| patrol-testing-guide.md | 巡视器测试指南 |
+| sms-wait-logic-test-result.md | SMS 等待逻辑测试结果 |
 
 ---
 
-## 🔄 版本历史
+### 4. acceptance/ — 验收文档（2 个）
 
-| 版本 | 日期 | 变更 |
-|------|------|------|
-| 1.0 | 2026-06-14 | 初始文档库创建 |
+| 文档 | 说明 |
+|------|------|
+| P0-acceptance-checklist.md | P0 优化验收清单 |
+| P0-acceptance-report.md | P0 优化验收报告 |
 
 ---
 
-*文档库维护者：Claude AI*
-*最后更新：2026-06-14*
-*项目路径：A:\Github\codex_register*
+### 5. patrol/ — 巡视器机制（3 个）
+
+| 文档 | 说明 |
+|------|------|
+| patrol-working-principle.md | 巡视器工作原理说明 |
+| patrol-fix-explanation.md | 巡视器问题修复说明 |
+| patrol-fix-summary.md | 巡视器修复和测试总结 |
+
+---
+
+### 6. guides/ — 项目配套指南（11 个）
+
+| 文档 | 说明 |
+|------|------|
+| 接手清单.md | 新接手指南 |
+| handover-manual.md | 交接手册 |
+| user-guide.md | 完整使用指南 |
+| 快速参考手册.md | 快速参考手册 |
+| quick-reference.md | 快速参考卡 |
+| final-quick-start.md | 最终快速开始指南 |
+| final-summary.md | 最终总结 |
+| workflow-local-db-plan.md | 本地工作流落地方案 |
+| workflow-usage.md | Workflow 使用说明 |
+| upgrade-summary.md | 升级完成总结 |
+
+---
+
+### 7. analysis/ — 项目分析（7 个）
+
+| 文档 | 说明 |
+|------|------|
+| 项目分析文档.md | 项目完整技术分析 |
+| 代码对应关系文档.md | 代码文件功能映射 |
+| 文件树和统计.md | 项目文件树和统计报告 |
+| docs-index.md | 文档索引 |
+| docs-update-summary.md | 文档更新完成总结 |
+| byte-v-forge-organization-analysis.md | Byte-V-Forge 组织分析 |
+| linux-migration-guide.md | Linux 迁移指南 |
+
+---
+
+### 其他
+- API-Documentation.zip — API 文档压缩包
+
+---
+
+## 推荐阅读顺序
+
+1. guides/接手清单.md
+2. guides/workflow-local-db-plan.md
+3. guides/quick-reference.md
+4. guides/user-guide.md
+5. analysis/项目分析文档.md
+
+---
+
+*最后更新：2026-06-17*

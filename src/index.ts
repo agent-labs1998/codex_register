@@ -8,7 +8,7 @@ import {LocalDB} from "./local-db.js";
 import {WorkerScheduler} from "./worker-scheduler.js";
 import {runConcurrentRegistration} from "./concurrent-registration.js";
 import {proxyFetch} from "./proxy-fetch.js";
-import {getIpInfo} from "./ip-detect.js";
+import {getIpInfo, resetIpCache} from "./ip-detect.js";
 
 async function cancelHeroSmsActivationById(activationId: string): Promise<void> {
     const apiKey = String(appConfig.heroSMSApiKey ?? "").trim();
@@ -124,6 +124,7 @@ async function runOnce(): Promise<void> {
             // 显示当前使用的 IP（通过代理检测出口 IP）
             let ipInfo: any = null;
             try {
+                resetIpCache();
                 ipInfo = await getIpInfo();
                 const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
                 const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
@@ -913,7 +914,8 @@ async function main() {
               if (workflowName === "codex-cpa-register") {
                 // 显示当前使用的 IP（通过代理检测出口 IP）
                 try {
-                  const { getIpInfo } = await import("./ip-detect.js");
+                  const { getIpInfo, resetIpCache } = await import("./ip-detect.js");
+                  resetIpCache();
                   const ipInfo = await getIpInfo();
                   const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
                   const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
@@ -1041,8 +1043,10 @@ async function main() {
 
             // 延迟
             if (i < count && delayMs > 0) {
-              console.log(`[workflow] 等待 ${delayMs}ms 后继续...`);
-              await new Promise(r => setTimeout(r, delayMs));
+              const jitter = Math.floor(Math.random() * 15000) - 5000;
+              const actualDelay = Math.max(5000, delayMs + jitter);
+              console.log(`[workflow] 等待 ${actualDelay}ms 后继续...`);
+              await new Promise(r => setTimeout(r, actualDelay));
             }
           }
         }
@@ -1237,8 +1241,10 @@ async function main() {
         }
 
         if (appConfig.loopDelayMs > 0) {
-            console.log(`[延迟] 轮次间等待 ${appConfig.loopDelayMs}ms`);
-            await new Promise((resolve) => setTimeout(resolve, appConfig.loopDelayMs));
+            const jitter = Math.floor(Math.random() * 15000) - 5000;
+            const actualDelay = Math.max(5000, appConfig.loopDelayMs + jitter);
+            console.log(`[延迟] 轮次间等待 ${actualDelay}ms`);
+            await new Promise((resolve) => setTimeout(resolve, actualDelay));
         }
     }
 

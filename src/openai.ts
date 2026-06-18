@@ -38,6 +38,7 @@ type FetchLike = typeof fetch;
 const DEFAULT_INSECURE_TLS = true;
 const FETCH_RETRY_COUNT = 3;
 const FETCH_RETRY_DELAY_MS = 1500;
+const FETCH_RETRY_JITTER_MS = 2000;
 
 function resolveProxyUrl(): string {
     return appConfig.defaultProxyUrl;
@@ -369,11 +370,14 @@ export class OpenAIClient {
             const response = await this.fetch(currentURL, {
                 method: "GET",
                 redirect: "manual",
-                headers: {
-                    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "user-agent": this.userAgent,
-                    "accept-language": this.deviceProfile.acceptLanguage,
-                },
+                headers: this.createBrowserHeaders({
+                    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "accept-encoding": "gzip, deflate, br",
+                    referer: "https://chatgpt.com/",
+                    "sec-fetch-dest": "document",
+                    "sec-fetch-mode": "navigate",
+                    "sec-fetch-site": "cross-site",
+                }),
             });
             const location = response.headers.get("location");
             if (location) {
@@ -1003,18 +1007,16 @@ export class OpenAIClient {
         const usernameKind = isPhone ? "phone_number" : "email";
         const response = await this.fetch(AUTH_AUTHORIZE_CONTINUE_URL, {
             method: "POST",
-            headers: {
+            headers: this.createBrowserHeaders({
+                accept: "application/json",
                 "content-type": "application/json",
+                origin: AUTH_BASE_URL,
+                referer: `${AUTH_BASE_URL}/log-in-or-create-account`,
                 "openai-sentinel-token": sentinelToken,
-                "user-agent": this.userAgent,
-                "accept-language": this.deviceProfile.acceptLanguage,
-                "sec-ch-ua": this.clientHints.secChUa,
-                "sec-ch-ua-full-version-list": this.clientHints.secChUaFullVersionList,
-                "sec-ch-ua-mobile": this.clientHints.secChUaMobile,
-                "sec-ch-ua-platform": this.clientHints.secChUaPlatform,
-                "sec-ch-ua-platform-version": this.clientHints.secChUaPlatformVersion,
-                "sec-ch-viewport-width": this.clientHints.secChViewportWidth,
-            },
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+            }),
             body: JSON.stringify({
                 username: {
                     kind: usernameKind,
@@ -1081,13 +1083,15 @@ export class OpenAIClient {
         const code = externalCode || await this.resolveEmailOtpCode();
         const response = await this.fetch(AUTH_EMAIL_OTP_VALIDATE_URL, {
             method: "POST",
-            headers: {
+            headers: this.createBrowserHeaders({
                 accept: "application/json",
                 "content-type": "application/json",
                 origin: AUTH_BASE_URL,
                 referer: `${AUTH_BASE_URL}/email-verification`,
-                "user-agent": this.userAgent,
-            },
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+            }),
             body: JSON.stringify({code}),
         });
         if (!response.ok) {
@@ -1124,18 +1128,13 @@ export class OpenAIClient {
     async sendEmailOtp(): Promise<string> {
         const response = await this.fetch(AUTH_EMAIL_OTP_SEND_URL, {
             method: "GET",
-            headers: {
+            headers: this.createBrowserHeaders({
                 accept: "application/json",
                 referer: `${AUTH_BASE_URL}/create-account/password`,
-                "user-agent": this.userAgent,
-                "accept-language": this.deviceProfile.acceptLanguage,
-                "sec-ch-ua": this.clientHints.secChUa,
-                "sec-ch-ua-full-version-list": this.clientHints.secChUaFullVersionList,
-                "sec-ch-ua-mobile": this.clientHints.secChUaMobile,
-                "sec-ch-ua-platform": this.clientHints.secChUaPlatform,
-                "sec-ch-ua-platform-version": this.clientHints.secChUaPlatformVersion,
-                "sec-ch-viewport-width": this.clientHints.secChViewportWidth,
-            },
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+            }),
         });
         if (!response.ok) {
             throw new Error(
@@ -1202,37 +1201,27 @@ export class OpenAIClient {
     async selectWorkspace(consentURL: string): Promise<string> {
         await this.fetch(consentURL, {
             method: "GET",
-            headers: {
-                accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            headers: this.createBrowserHeaders({
+                accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 referer: `${AUTH_BASE_URL}/email-verification`,
-                "user-agent": this.userAgent,
-                "accept-language": this.deviceProfile.acceptLanguage,
-                "sec-ch-ua": this.clientHints.secChUa,
-                "sec-ch-ua-full-version-list": this.clientHints.secChUaFullVersionList,
-                "sec-ch-ua-mobile": this.clientHints.secChUaMobile,
-                "sec-ch-ua-platform": this.clientHints.secChUaPlatform,
-                "sec-ch-ua-platform-version": this.clientHints.secChUaPlatformVersion,
-                "sec-ch-viewport-width": this.clientHints.secChViewportWidth,
-            },
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "same-origin",
+            }),
         });
 
         const workspaceID = await this.resolveWorkspaceID();
         const response = await this.fetch(AUTH_WORKSPACE_SELECT_URL, {
             method: "POST",
-            headers: {
+            headers: this.createBrowserHeaders({
                 accept: "application/json",
                 "content-type": "application/json",
                 origin: AUTH_BASE_URL,
                 referer: consentURL,
-                "user-agent": this.userAgent,
-                "accept-language": this.deviceProfile.acceptLanguage,
-                "sec-ch-ua": this.clientHints.secChUa,
-                "sec-ch-ua-full-version-list": this.clientHints.secChUaFullVersionList,
-                "sec-ch-ua-mobile": this.clientHints.secChUaMobile,
-                "sec-ch-ua-platform": this.clientHints.secChUaPlatform,
-                "sec-ch-ua-platform-version": this.clientHints.secChUaPlatformVersion,
-                "sec-ch-viewport-width": this.clientHints.secChViewportWidth,
-            },
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+            }),
             body: JSON.stringify({
                 workspace_id: workspaceID,
             }),
@@ -1252,17 +1241,14 @@ export class OpenAIClient {
             const response = await this.fetch(currentURL, {
                 method: "GET",
                 redirect: "manual",
-                headers: {
-                    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "user-agent": this.userAgent,
-                    "accept-language": this.deviceProfile.acceptLanguage,
-                    "sec-ch-ua": this.clientHints.secChUa,
-                    "sec-ch-ua-full-version-list": this.clientHints.secChUaFullVersionList,
-                    "sec-ch-ua-mobile": this.clientHints.secChUaMobile,
-                    "sec-ch-ua-platform": this.clientHints.secChUaPlatform,
-                    "sec-ch-ua-platform-version": this.clientHints.secChUaPlatformVersion,
-                    "sec-ch-viewport-width": this.clientHints.secChViewportWidth,
-                },
+                headers: this.createBrowserHeaders({
+                    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "accept-encoding": "gzip, deflate, br",
+                    referer: "https://chatgpt.com/",
+                    "sec-fetch-dest": "document",
+                    "sec-fetch-mode": "navigate",
+                    "sec-fetch-site": "cross-site",
+                }),
             });
 
             const location = response.headers.get("location");
@@ -1380,18 +1366,13 @@ export class OpenAIClient {
         const response = await this.fetch(callbackURL, {
             method: "GET",
             redirect: "follow",
-            headers: {
-                accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            headers: this.createBrowserHeaders({
+                accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 referer: `${AUTH_BASE_URL}/about-you`,
-                "user-agent": this.userAgent,
-                "accept-language": this.deviceProfile.acceptLanguage,
-                "sec-ch-ua": this.clientHints.secChUa,
-                "sec-ch-ua-full-version-list": this.clientHints.secChUaFullVersionList,
-                "sec-ch-ua-mobile": this.clientHints.secChUaMobile,
-                "sec-ch-ua-platform": this.clientHints.secChUaPlatform,
-                "sec-ch-ua-platform-version": this.clientHints.secChUaPlatformVersion,
-                "sec-ch-viewport-width": this.clientHints.secChViewportWidth,
-            },
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "cross-site",
+            }),
         });
         if (!response.ok) {
             throw new Error(`完成 ChatGPT 注册回调失败: ${response.status}`);
@@ -1888,8 +1869,9 @@ export class OpenAIClient {
                 console.log(
                     `[网络重试 ${attempt}/${FETCH_RETRY_COUNT}] ${this.describeRetryTarget(input)} ${this.describeRetryError(error)}`,
                 );
-                console.log(`[延迟] 网络重试等待 ${FETCH_RETRY_DELAY_MS * attempt}ms`);
-                await sleep(FETCH_RETRY_DELAY_MS * attempt);
+                const jitter = Math.floor(Math.random() * FETCH_RETRY_JITTER_MS);
+                console.log(`[延迟] 网络重试等待 ${FETCH_RETRY_DELAY_MS * attempt + jitter}ms`);
+                await sleep(FETCH_RETRY_DELAY_MS * attempt + jitter);
             }
         }
         throw lastError instanceof Error ? lastError : new Error(String(lastError));

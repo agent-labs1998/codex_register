@@ -6,3 +6,6 @@ proxiedmail-account.json
 hotmail/
 *.log
 data/
+codex_register_V1/
+v1-1/
+.playwright-cli/

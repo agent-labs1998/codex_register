@@ -4,7 +4,7 @@ import { appConfig } from "./config.js";
 import { createSMSBroker, SMSActivationLease } from "./sms/index.js";
 import { randomUUID } from "node:crypto";
 import { proxyFetch } from "./proxy-fetch.js";
-import { getIpInfo, IpInfo } from "./ip-detect.js";
+import { getIpInfo, resetIpCache, IpInfo } from "./ip-detect.js";
 
 export type WorkerStatus =
   | "idle"
@@ -115,6 +115,7 @@ export class WorkerScheduler {
     // 检测 IP
     let ipInfo: IpInfo | null = null;
     try {
+      resetIpCache();
       ipInfo = await getIpInfo();
       const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
       const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";

@@ -2,7 +2,7 @@ import { appConfig } from "./config.js";
 import { generateRandomDeviceProfile } from "./device-profile.js";
 import { OpenAIClient } from "./openai.js";
 import { SMSActivationLease } from "./sms/index.js";
-import { getIpInfo } from "./ip-detect.js";
+import { getIpInfo, resetIpCache } from "./ip-detect.js";
 import { proxyFetch } from "./proxy-fetch.js";
 
 export interface RegistrationTask {
@@ -165,6 +165,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     setGlobalDispatcher(createProxyDispatcher(proxyUrl, true));
   }
 
+  resetIpCache();
   const ipInfo = await getIpInfo();
   const residentialTag = ipInfo.isResidential ? "🏠 住宅" : "🏢 数据中心";
   const proxyTag = ipInfo.isProxy ? "🔒 代理" : "";
