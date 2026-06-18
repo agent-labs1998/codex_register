@@ -3,6 +3,7 @@ import {readFile} from "node:fs/promises";
 import path from "node:path";
 import vm from "node:vm";
 import {DEFAULT_USER_AGENT} from "./constants.js";
+import {log} from "./logger.js";
 import {defaultDeviceProfile, getDeviceClientHints, type DeviceProfile} from "./device-profile.js";
 import {fetchSentinelTokenFromBrowser} from "./sentinel-browser.js";
 
@@ -380,11 +381,11 @@ async function computeTurnstileDx(
         if (looksLikeEncodedError(sdkDecoded)) {
             throw new Error(`sdk returned encoded error: ${sdkDecoded}`);
         }
-        console.log(`sentinelTurnstileSource: sdk len=${sdkResult.length}`);
+        log.debug(`sentinelTurnstileSource: sdk len=${sdkResult.length}`);
         return sdkResult;
     } catch (error) {
         sdkError = error;
-        console.log(
+        log.debug(
             `sentinelTurnstileSource: vm sdkError=${error instanceof Error ? error.message : String(error)}`,
         );
     }
@@ -413,7 +414,7 @@ async function computeTurnstileDx(
             `turnstile dx 结果异常过短: ops=${program.length} encoded=${encoded} raw=${JSON.stringify(encoded)}`,
         );
     }
-    console.log(`sentinelTurnstileSource: vm len=${encoded.length}`);
+    log.debug(`sentinelTurnstileSource: vm len=${encoded.length}`);
     return encoded;
 }
 
@@ -692,7 +693,7 @@ class TurnstileVM {
                 .map(([key, value]) => `${key}=${this.preview(value)}`)
                 .join(" ")}`
             : "";
-        console.log(`[sentinel] ${message}${suffix}`);
+        log.debug(`[sentinel] ${message}${suffix}`);
     }
 
     private invokeFunction(fn: (...args: unknown[]) => unknown, args: unknown[]): unknown {

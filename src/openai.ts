@@ -10,6 +10,7 @@ import {SocksClient} from "socks";
 import makeFetchCookie from "fetch-cookie";
 import {CookieJar} from "tough-cookie";
 import {appConfig} from "./config.js";
+import {log} from "./logger.js";
 import {shouldAutoUploadAuthToCLIProxyAPI, uploadAuthFileToCLIProxyAPI} from "./cliproxyapi.js";
 import {defaultDeviceProfile, type DeviceProfile, getDeviceClientHints} from "./device-profile.js";
 import {
@@ -265,7 +266,7 @@ export class OpenAIClient {
     }
 
     private logProgress(current: number | string, total: number, message: string): void {
-        console.log(`[${current}/${total}] ${message}`);
+        log.info(`[${current}/${total}] ${message}`);
     }
 
     /**
@@ -929,7 +930,8 @@ export class OpenAIClient {
         // 这是个 GET endpoint（302 -> /contact-verification），但是某些版本可能返回 JSON
         try {
             const payload = (await response.json()) as ContinueResponse;
-            console.log(`[otp-send] ✓ 短信已触发`);
+            log.info(`[otp-send] ✓ 短信已触发`);
+            log.debug(`[otp-send] 响应:`, JSON.stringify(payload).slice(0, 500));
             return payload.continue_url ?? "";
         } catch {
             return "";
@@ -976,7 +978,8 @@ export class OpenAIClient {
         }
         // 响应 continue_url 应该是 /api/accounts/phone-otp/send
         const regPayload = await respReg.json();
-        console.log(`[register] ✓ 提交手机号成功`);
+        log.info(`[register] ✓ 提交手机号成功`);
+        log.debug(`[register] 响应:`, JSON.stringify(regPayload).slice(0, 500));
 
         // Step 3: GET /api/accounts/phone-otp/send 触发 SMS
         this.logProgress(3, totalSteps, `触发 phone OTP 发送`);

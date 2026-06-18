@@ -38,6 +38,7 @@ interface AppConfigFile {
     profileIpLookupUrl?: unknown;
     profileIpLookupTimeoutMs?: unknown;
     profileLocaleByCountry?: unknown;
+    logLevel?: unknown;
 }
 
 export interface AppConfig {
@@ -76,6 +77,7 @@ export interface AppConfig {
     profileIpLookupUrl: string;
     profileIpLookupTimeoutMs: number;
     profileLocaleByCountry: Record<string, string>;
+    logLevel: "info" | "debug";
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -121,6 +123,7 @@ const DEFAULT_CONFIG: AppConfig = {
         FR: "fr",
         DE: "de",
     },
+    logLevel: "info",
 };
 
 function normalizeNumber(value: unknown, fallback: number): number {
@@ -305,6 +308,7 @@ function loadConfig(): AppConfig {
         profileIpLookupUrl: normalizeString(parsed.profileIpLookupUrl, DEFAULT_CONFIG.profileIpLookupUrl),
         profileIpLookupTimeoutMs: normalizePositiveInteger(parsed.profileIpLookupTimeoutMs, DEFAULT_CONFIG.profileIpLookupTimeoutMs),
         profileLocaleByCountry: normalizeStringRecord(parsed.profileLocaleByCountry, DEFAULT_CONFIG.profileLocaleByCountry),
+        logLevel: parsed.logLevel === "debug" ? "debug" : "info",
     };
 }
 

@@ -4,6 +4,7 @@ import { OpenAIClient } from "./openai.js";
 import { SMSActivationLease } from "./sms/index.js";
 import { getIpInfo, resetIpCache } from "./ip-detect.js";
 import { proxyFetch } from "./proxy-fetch.js";
+import { log } from "./logger.js";
 
 export interface RegistrationTask {
   workerId: string;
@@ -74,7 +75,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   }
 
   const reportStatus = (status: string) => {
-    console.log(`[cpa-registration] ${workerId} -> ${status}`);
+    log.info(`[cpa-registration] ${workerId} -> ${status}`);
     onStatusChange?.(status);
   };
 
@@ -213,6 +214,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
       throw new Error(`CPA oauth-callback failed: status=${status}`);
     }
     console.log(`[CPA] ③ ✓ 入库成功 status=${status}`);
+    log.debug(`[CPA] ③ 响应:`, body.slice(0, 500));
   } catch (error) {
     reportStatus("failed");
     return {
