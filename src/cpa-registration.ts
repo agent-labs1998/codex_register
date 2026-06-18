@@ -78,55 +78,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     onStatusChange?.(status);
   };
 
-  // Step 1: Phone signup - 等待 SMS 验证码
-  reportStatus("waiting_sms");
-
-  let smsCode: string;
-  try {
-    // Worker 只等待 65 秒，超时后立即释放 worker，重新注册新 worker
-    // 巡视器会在后台持续检查，120 秒后释放号码
-    const SMS_WAIT_TIMEOUT_MS = 65_000;
-    const result = await Promise.race([
-      phoneLease.waitForVerificationCode().then(v => v.code),
-      new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), SMS_WAIT_TIMEOUT_MS);
-      }),
-    ]);
-
-    if (!result) {
-      // 65 秒内未收到验证码，立即释放 worker
-      // 号码会在巡视器中 120 秒后释放
-      reportStatus("timed_out");
-      return {
-        status: "failed",
-        phone: phoneNumber,
-        email: bindEmail,
-        password,
-        error: `SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms 内未收到验证码，立即释放 worker`,
-        activationId,
-        workerId,
-        attemptId,
-      };
-    }
-
-    smsCode = result;
-    reportStatus("sms_received");
-    console.log(`[cpa-registration] ${workerId} 收到验证码: ${smsCode}`);
-  } catch (error) {
-    reportStatus("timed_out");
-    return {
-      status: "failed",
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: `SMS timeout: ${(error as Error).message}`,
-      activationId,
-      workerId,
-      attemptId,
-    };
-  }
-
-  // Step 2: 用验证码完成 phone signup
+  // Step 1: Phone signup（注册 OpenAI 触发发短信 + 等验证码一体化）
   reportStatus("registering");
 
   const signupClient = new OpenAIClient({
@@ -137,17 +89,41 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     smsBroker: undefined,
   });
 
+  let smsCode: string;
+  const SMS_WAIT_TIMEOUT_MS = 65_000;
+
   try {
-    await signupClient.authPhoneSignupHTTP(phoneNumber, async () => smsCode);
+    const sigRes = await signupClient.authPhoneSignupHTTP(phoneNumber, async () => {
+      console.log(`[cpa-registration] ${workerId} 等待 SMS 验证码...`);
+      reportStatus("waiting_sms");
+
+      const result = await Promise.race([
+        phoneLease.waitForVerificationCode().then(v => v.code),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), SMS_WAIT_TIMEOUT_MS);
+        }),
+      ]);
+
+      if (!result) {
+        throw new Error(`SMS wait timeout: ${SMS_WAIT_TIMEOUT_MS}ms`);
+      }
+
+      console.log(`[cpa-registration] ${workerId} 收到验证码: ${result}`);
+      reportStatus("sms_received");
+      smsCode = result;
+      return result;
+    });
+
     console.log(`[cpa-registration] ${workerId} phone signup 成功`);
   } catch (error) {
-    reportStatus("failed");
+    const errMsg = (error as Error).message;
+    reportStatus(errMsg.includes("timeout") ? "timed_out" : "failed");
     return {
       status: "failed",
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: `Phone signup failed: ${(error as Error).message}`,
+      error: `Phone signup failed: ${errMsg}`,
       activationId,
       workerId,
       attemptId,

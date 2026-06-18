@@ -1033,7 +1033,9 @@ async function main() {
             } catch (error) {
               failureCount++;
               const errMsg = (error as Error).message;
+              const errStack = (error as Error).stack?.split("\n").slice(0, 5).join(" | ") ?? "";
               console.error(`[workflow] ❌ 第 ${i} 次异常: ${errMsg}`);
+              console.error(`[workflow] ❌ 堆栈: ${errStack}`);
               db.updateAttempt(attemptId, {
                 status: "failed",
                 error: errMsg,

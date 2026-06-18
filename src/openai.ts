@@ -54,6 +54,8 @@ function createDispatcher(proxyUrl: string, allowInsecureTLS: boolean): Dispatch
             connect: {
                 rejectUnauthorized: !allowInsecureTLS,
             },
+            keepAliveTimeout: 0,
+            keepAliveMaxTimeout: 0,
         });
     }
 
@@ -76,6 +78,8 @@ function createDispatcher(proxyUrl: string, allowInsecureTLS: boolean): Dispatch
 
         return new Agent({
             connect,
+            keepAliveTimeout: 0,
+            keepAliveMaxTimeout: 0,
         });
     }
 
@@ -925,6 +929,7 @@ export class OpenAIClient {
         // 这是个 GET endpoint（302 -> /contact-verification），但是某些版本可能返回 JSON
         try {
             const payload = (await response.json()) as ContinueResponse;
+            console.log(`[otp-send] 响应: ${JSON.stringify(payload).slice(0, 300)}`);
             return payload.continue_url ?? "";
         } catch {
             return "";
@@ -970,7 +975,8 @@ export class OpenAIClient {
             throw new Error(`PhoneSignupRegister请求失败: ${await this.formatErrorResponse(respReg)}`);
         }
         // 响应 continue_url 应该是 /api/accounts/phone-otp/send
-        await respReg.json();
+        const regPayload = await respReg.json();
+        console.log(`[register] 注册响应: ${JSON.stringify(regPayload).slice(0, 300)}`);
 
         // Step 3: GET /api/accounts/phone-otp/send 触发 SMS
         this.logProgress(3, totalSteps, `触发 phone OTP 发送`);
