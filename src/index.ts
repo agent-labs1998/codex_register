@@ -1002,6 +1002,11 @@ async function main() {
                     token_expires_at: null,
                     cpa_auth_file: result.cpaAuthFile || "",
                     cpa_base_url: appConfig.cliproxyApiBaseUrl || "",
+                    ip_address: result.ipAddress || "unknown",
+                    ip_country: result.ipCountry || "unknown",
+                    ip_city: result.ipCity || "unknown",
+                    ip_isp: result.ipIsp || "unknown",
+                    ip_is_residential: result.ipIsResidential ? 1 : 0,
                     status: "active",
                   });
 

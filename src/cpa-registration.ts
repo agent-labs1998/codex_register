@@ -33,6 +33,11 @@ export interface CodexCpaResult {
   activationId?: string;
   workerId?: string;
   attemptId?: number;
+  ipAddress?: string;
+  ipCountry?: string;
+  ipCity?: string;
+  ipIsp?: string;
+  ipIsResidential?: boolean;
 }
 
 async function cancelActivation(activationId: string): Promise<void> {
@@ -300,6 +305,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     console.log(`✅ 注册成功 | ${phoneNumber} | ${bindEmail}`);
     console.log(`✅ Token: ${tok.slice(0, 30)}... (${tok.length} 字符)`);
     console.log(`✅ Auth 文件: ${latest.name}`);
+    console.log(`✅ IP: ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
     console.log(`${"═".repeat(60)}\n`);
 
     return {
@@ -312,6 +318,11 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
       activationId,
       workerId,
       attemptId,
+      ipAddress: ipInfo.ip,
+      ipCountry: ipInfo.country,
+      ipCity: ipInfo.city,
+      ipIsp: ipInfo.isp,
+      ipIsResidential: ipInfo.isResidential,
     };
   } catch (error) {
     reportStatus("failed");
