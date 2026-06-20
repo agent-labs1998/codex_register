@@ -60,6 +60,50 @@ data/codex-register.sqlite
 - 后台巡视器持续轮询 active activations
 - 超时号码主动取消，避免长时间挂死浪费余额
 
+### 6. 邮箱去重管理（Hotmail 模式）
+使用 Hotmail 邮箱时，程序自动管理邮箱池，防止重复使用：
+
+**工作流程：**
+```
+程序启动 → 读取 hotmail/tokens.txt → 导入 hotmail_accounts 表（初始 unused）
+每次注册 → 查询 status='unused' 的邮箱 → 标记为 used → 使用
+注册成功 → 保持 used，永不再用
+注册失败（email_already_in_use）→ 标记 failed，永不再用
+注册失败（网络超时等）→ 标记 retryable，可被其他号码重试
+所有邮箱用完 → 报错："Hotmail 邮箱池已用完，请补充新账号"
+```
+
+**邮箱状态说明：**
+| 状态 | 含义 | 是否可用 |
+|------|------|---------|
+| `unused` | 全新未使用 | ✅ 优先使用 |
+| `retryable` | 曾失败但可重试（网络超时等） | ✅ 次优先 |
+| `used` | 已成功注册 | ❌ 永不再用 |
+| `failed` | 邮箱已被占用 | ❌ 永不再用 |
+
+**注意：** coroabet 模式每次自动生成新邮箱，不需要去重。
+
+### 7. 孤儿账号存储
+当注册流程走到最后一步（邮箱绑定或 CPA 入库）失败时，OpenAI 账号已经创建但没有完成入库。程序自动将这类"孤儿账号"存入数据库，方便后续手动补救。
+
+**触发场景：**
+- `email_already_in_use` — 邮箱已被其他 OpenAI 账号绑定
+- `email_otp_failed` — 邮箱验证码失败
+- `cpa_callback_failed` — CPA 入库接口失败
+
+**存储信息：** 手机号、邮箱、密码、短信验证码、失败原因、时间
+
+**手动补救流程：**
+```bash
+# 1. 查看未解决的孤儿账号
+npm run dev -- --db-list-orphans
+
+# 2. 手动为该手机号绑定新邮箱，完成注册
+
+# 3. 标记为已解决
+npm run dev -- --db-resolve-orphan <id> --note "手动绑定了新邮箱"
+```
+
 ---
 
 ## 项目规模
