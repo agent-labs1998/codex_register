@@ -429,60 +429,7 @@ async function executeSingleRegistration(
     };
   }
 
-  // Step 1: 准备邮箱
-  let bindEmail: string;
-  let fetchAddEmailOtp: () => Promise<string>;
-
-  try {
-    db.updateWorkerSlot(workerId, { status: "preparing_email" });
-    db.updateAttempt(attemptId, { status: "preparing_email" });
-
-    const mailbox = await import("./mailbox.js");
-    bindEmail = await mailbox.getEmailAddress();
-    fetchAddEmailOtp = async () => {
-      const startedAt = Date.now();
-      console.log(`[concurrent] ${workerId} 等待邮件 OTP for ${bindEmail}`);
-      return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
-    };
-
-    // 实时更新绑定邮箱
-    db.updateWorkerSlot(workerId, {
-      bind_email: bindEmail,
-      email_deadline_at: new Date(Date.now() + emailTimeoutMs).toISOString(),
-    });
-
-    db.updateAttempt(attemptId, {
-      email: bindEmail,
-    });
-
-    console.log(`[concurrent] ${workerId} 绑定邮箱 ${bindEmail}`);
-  } catch (error) {
-    await pool.cancelPhone(phoneLease);
-    pool.removeLease(phoneLease);
-
-    db.updateWorkerSlot(workerId, {
-      status: "failed",
-      last_error: `邮箱准备失败: ${(error as Error).message}`,
-    });
-
-    db.updateAttempt(attemptId, {
-      status: "failed",
-      error: `邮箱准备失败: ${(error as Error).message}`,
-    });
-
-    return {
-      success: false,
-      phone: phoneNumber,
-      email: "",
-      password,
-      error: `邮箱准备失败: ${(error as Error).message}`,
-      activationId,
-      workerId,
-      attemptId,
-    };
-  }
-
-  // Step 2: 注册 OpenAI（触发发短信）+ 等待 SMS 验证码
+  // Step 1: 注册 OpenAI（触发发短信）+ 等待 SMS 验证码
   console.log(`[concurrent] ${workerId} 注册 OpenAI...`);
 
   const SMS_WAIT_TIMEOUT_MS = 65_000;
@@ -542,9 +489,62 @@ async function executeSingleRegistration(
     return {
       success: false,
       phone: phoneNumber,
-      email: bindEmail,
+      email: "",
       password,
       error: `Phone signup failed: ${errMsg}`,
+      activationId,
+      workerId,
+      attemptId,
+    };
+  }
+
+  // Step 2: 创建邮箱（延迟到注册成功后才创建，避免失败时浪费邮箱资源）
+  let bindEmail: string;
+  let fetchAddEmailOtp: () => Promise<string>;
+
+  try {
+    db.updateWorkerSlot(workerId, { status: "preparing_email" });
+    db.updateAttempt(attemptId, { status: "preparing_email" });
+
+    const mailbox = await import("./mailbox.js");
+    bindEmail = await mailbox.getEmailAddress();
+    fetchAddEmailOtp = async () => {
+      const startedAt = Date.now();
+      console.log(`[concurrent] ${workerId} 等待邮件 OTP for ${bindEmail}`);
+      return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
+    };
+
+    // 实时更新绑定邮箱
+    db.updateWorkerSlot(workerId, {
+      bind_email: bindEmail,
+      email_deadline_at: new Date(Date.now() + emailTimeoutMs).toISOString(),
+    });
+
+    db.updateAttempt(attemptId, {
+      email: bindEmail,
+    });
+
+    console.log(`[concurrent] ${workerId} 绑定邮箱 ${bindEmail}`);
+  } catch (error) {
+    await pool.cancelPhone(phoneLease);
+    pool.removeLease(phoneLease);
+
+    db.updateWorkerSlot(workerId, {
+      status: "failed",
+      last_error: `邮箱准备失败: ${(error as Error).message}`,
+    });
+
+    db.updateAttempt(attemptId, {
+      status: "failed",
+      error: `邮箱准备失败: ${(error as Error).message}`,
+    });
+
+    return {
+      success: false,
+      phone: phoneNumber,
+      email: "",
+      password,
+      error: `邮箱准备失败: ${(error as Error).message}`,
       activationId,
       workerId,
       attemptId,

@@ -12,14 +12,18 @@ export interface RegistrationTask {
   phoneLease: SMSActivationLease;
   phoneNumber: string;
   activationId: string;
-  bindEmail: string;
-  fetchAddEmailOtp: () => Promise<string>;
+  bindEmail?: string;
+  fetchAddEmailOtp?: () => Promise<string>;
   deadlines: {
     smsDeadlineAt: number;
     emailDeadlineAt: number;
     cpaDeadlineAt: number;
   };
   onStatusChange?: (status: string) => void;
+  db?: {
+    updateWorkerSlot(workerId: string, data: Record<string, any>): void;
+    updateAttempt(attemptId: number, data: Record<string, any>): void;
+  };
 }
 
 export interface CodexCpaResult {
@@ -61,7 +65,7 @@ async function cancelActivation(activationId: string): Promise<void> {
 }
 
 export async function runCpaRegistration(task: RegistrationTask): Promise<CodexCpaResult> {
-  const { workerId, attemptId, phoneLease, phoneNumber, activationId, bindEmail, fetchAddEmailOtp, deadlines, onStatusChange } = task;
+  const { workerId, attemptId, phoneLease, phoneNumber, activationId, deadlines, onStatusChange, db } = task;
   const password = appConfig.defaultPassword;
   const cpaBase = appConfig.cliproxyApiBaseUrl || "";
   const cpaKey = appConfig.cliproxyApiManagementKey || "";
@@ -70,7 +74,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     return {
       status: "failed",
       phone: phoneNumber,
-      email: bindEmail,
+      email: task.bindEmail || "",
       password,
       error: "Missing CPA management key",
       activationId,
@@ -87,7 +91,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   // Step 1: Phone signup（注册 OpenAI 触发发短信 + 等验证码一体化）
   reportStatus("registering");
   console.log(`\n${"═".repeat(60)}`);
-  console.log(`[注册] ${workerId} 号码=${phoneNumber} 邮箱=${bindEmail}`);
+  console.log(`[注册] ${workerId} 号码=${phoneNumber}`);
   console.log(`${"═".repeat(60)}`);
 
   const signupClient = new OpenAIClient({
@@ -130,13 +134,48 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     return {
       status: "failed",
       phone: phoneNumber,
-      email: bindEmail,
+      email: task.bindEmail || "",
       password,
       error: `Phone signup failed: ${errMsg}`,
       activationId,
       workerId,
       attemptId,
     };
+  }
+
+  // Step 2: 创建邮箱（延迟到注册成功后才创建，避免失败时浪费邮箱资源）
+  let bindEmail = task.bindEmail;
+  let fetchAddEmailOtp = task.fetchAddEmailOtp;
+
+  if (!bindEmail) {
+    try {
+      const mailbox = await import("./mailbox.js");
+      bindEmail = await mailbox.getEmailAddress();
+      fetchAddEmailOtp = async () => {
+        const startedAt = Date.now();
+        console.log(`[cpa-registration] ${workerId} 等待邮件 OTP for ${bindEmail}`);
+        return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
+      };
+      console.log(`[CPA] 邮箱已创建: ${bindEmail}`);
+
+      // 更新 db
+      if (db) {
+        db.updateWorkerSlot(workerId, { bind_email: bindEmail });
+        db.updateAttempt(attemptId, { email: bindEmail });
+      }
+    } catch (error) {
+      reportStatus("failed");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: "",
+        password,
+        error: `邮箱准备失败: ${(error as Error).message}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
   }
 
   // Step 3: CPA OAuth

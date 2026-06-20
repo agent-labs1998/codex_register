@@ -946,23 +946,13 @@ async function main() {
                 const phoneNumber = `+${lease.phoneNumber}`;
                 const activationId = String(lease.activationId || "");
 
-                // 准备邮箱
-                const mailbox = await import("./mailbox.js");
-                const bindEmail = await mailbox.getEmailAddress();
-                const fetchAddEmailOtp = async () => {
-                  const startedAt = Date.now();
-                  console.log(`[workflow] 等待邮件 OTP for ${bindEmail}`);
-                  return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
-                };
-
                 // 更新 attempt 和 worker
                 db.updateAttempt(attemptId, {
                   phone: phoneNumber,
-                  email: bindEmail,
                   sms_activation_id: activationId,
                 });
 
-                // 执行注册
+                // 执行注册（邮箱延迟到注册成功后由 cpa-registration 内部创建）
                 const { runCpaRegistration } = await import("./cpa-registration.js");
                 const result = await runCpaRegistration({
                   workerId: `serial-${i}`,
@@ -970,8 +960,6 @@ async function main() {
                   phoneLease: lease,
                   phoneNumber,
                   activationId,
-                  bindEmail,
-                  fetchAddEmailOtp,
                   deadlines: {
                     smsDeadlineAt: Date.now() + smsTimeoutMs,
                     emailDeadlineAt: Date.now() + emailTimeoutMs,
@@ -980,6 +968,7 @@ async function main() {
                   onStatusChange: (status) => {
                     console.log(`[workflow] ${status}`);
                   },
+                  db,
                 });
 
                 console.log(`[POOL-RESULT] status=${result.status} phone=${result.phone} email=${result.email}`);

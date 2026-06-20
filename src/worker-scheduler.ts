@@ -154,43 +154,13 @@ export class WorkerScheduler {
         throw new Error(`获取号码失败: ${(error as Error).message}`);
       }
 
-      // Step 2: 准备邮箱
-      let bindEmail: string;
-      let fetchAddEmailOtp: () => Promise<string>;
-
-      try {
-        const mailbox = await import("./mailbox.js");
-        bindEmail = await mailbox.getEmailAddress();
-        fetchAddEmailOtp = async () => {
-          const startedAt = Date.now();
-          console.log(`[scheduler] ${workerId} 等待邮件 OTP for ${bindEmail}`);
-          return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
-        };
-
-        // 绑定邮箱到 worker
-        this.db.updateWorkerSlot(workerId, {
-          bind_email: bindEmail,
-          email_deadline_at: new Date(Date.now() + this.config.emailTimeoutMs).toISOString(),
-        });
-
-        this.db.updateAttempt(attemptId, {
-          email: bindEmail,
-        });
-
-        console.log(`[scheduler] ${workerId} 绑定邮箱 ${bindEmail}`);
-      } catch (error) {
-        throw new Error(`邮箱准备失败: ${(error as Error).message}`);
-      }
-
-      // Step 3: 执行注册（状态机在内部逐步驱动）
+      // Step 2: 执行注册（邮箱延迟到注册成功后由 cpa-registration 内部创建）
       const task: RegistrationTask = {
         workerId,
         attemptId,
         phoneLease,
         phoneNumber,
         activationId,
-        bindEmail,
-        fetchAddEmailOtp,
         deadlines: {
           smsDeadlineAt: Date.now() + this.config.smsTimeoutMs,
           emailDeadlineAt: Date.now() + this.config.emailTimeoutMs,
@@ -199,6 +169,7 @@ export class WorkerScheduler {
         onStatusChange: (status: string) => {
           this.db.updateWorkerSlot(workerId, { status });
         },
+        db: this.db,
       };
 
       const result = await runCpaRegistration(task);
