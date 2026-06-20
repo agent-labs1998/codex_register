@@ -63,7 +63,7 @@ const smsBroker = appConfig.heroSMSApiKey ? createSMSBroker({
     proxyUrl: appConfig.heroSMSProxy || "",
 }) : undefined
 
-async function runOnce(): Promise<void> {
+async function runOnce(db?: LocalDB): Promise<void> {
     const email = readArgValue("--email").trim();
     const manualOtp = hasFlag("--otp");
     const directSignupAuth = hasFlag("--sign");
@@ -142,17 +142,52 @@ async function runOnce(): Promise<void> {
                 fetchAddEmailOtp = undefined;
                 mailboxPrepError = "";
                 try {
-                    const mailbox = await import("./mailbox.js");
+                    // 优先使用 hotmailProvider 从数据库获取邮箱（支持去重）
+                    if (!bindEmail && db) {
+                        const {createHotmailProvider} = await import("./mail/hotmail.js");
+                        const hotmailProvider = createHotmailProvider(db);
+                        try {
+                            bindEmail = await hotmailProvider.getEmailAddress();
+                            console.log(`[codex-cpa] (${phoneTry}/${MAX_PHONE_TRIES}) 从数据库获取邮箱: ${bindEmail}`);
+                            fetchAddEmailOtp = async () => {
+                                const startedAt = Date.now();
+                                console.log(`[codex-cpa] 等待邮件 OTP for ${bindEmail} (after=${new Date(startedAt).toISOString()})...`);
+                                return await hotmailProvider.getEmailVerificationCode(bindEmail, {minTimestampMs: startedAt});
+                            };
+                        } catch (hotmailErr) {
+                            const errMsg = (hotmailErr as Error).message;
+                            // 如果是邮箱池用完的错误，结束任务
+                            if (errMsg.includes("Hotmail 邮箱池已用完")) {
+                                console.error(`[codex-cpa] ❌ ${errMsg}`);
+                                console.error(`[codex-cpa] 任务结束：没有可用的邮箱，请补充新账号后重试`);
+                                const stats = db.getHotmailAccountStats();
+                                console.log(`[codex-cpa] 当前邮箱池状态: 全新=${stats.unused} 可重试=${stats.retryable} 已用=${stats.used} 失败=${stats.failed}`);
+                                throw new Error(errMsg);  // 抛出错误，结束整个 runOnce
+                            }
+                            // 其他错误，回退到原有逻辑
+                            console.warn(`[codex-cpa] (${phoneTry}/${MAX_PHONE_TRIES}) hotmailProvider 获取邮箱失败，回退到 mailbox: ${errMsg}`);
+                        }
+                    }
+
+                    // 如果 hotmailProvider 没有获取到邮箱，使用原有逻辑
                     if (!bindEmail) {
+                        const mailbox = await import("./mailbox.js");
                         bindEmail = await mailbox.getEmailAddress();
                     }
                     console.log(`[codex-cpa] (${phoneTry}/${MAX_PHONE_TRIES}) 新 worker 邮箱: ${bindEmail}`);
-                    fetchAddEmailOtp = async () => {
-                        const startedAt = Date.now();
-                        console.log(`[codex-cpa] 等待邮件 OTP for ${bindEmail} (after=${new Date(startedAt).toISOString()})...`);
-                        return await mailbox.getEmailVerificationCode(bindEmail, {minTimestampMs: startedAt});
-                    };
+                    if (!fetchAddEmailOtp) {
+                        fetchAddEmailOtp = async () => {
+                            const startedAt = Date.now();
+                            console.log(`[codex-cpa] 等待邮件 OTP for ${bindEmail} (after=${new Date(startedAt).toISOString()})...`);
+                            const mailbox = await import("./mailbox.js");
+                            return await mailbox.getEmailVerificationCode(bindEmail, {minTimestampMs: startedAt});
+                        };
+                    }
                 } catch (e) {
+                    // 如果是邮箱池用完的错误，直接抛出，结束任务
+                    if ((e as Error).message.includes("Hotmail 邮箱池已用完")) {
+                        throw e;
+                    }
                     mailboxPrepError = (e as Error).message;
                     console.warn(`[codex-cpa] (${phoneTry}/${MAX_PHONE_TRIES}) 邮箱准备失败: ${mailboxPrepError}`);
                 }
@@ -582,9 +617,37 @@ async function runOnce(): Promise<void> {
         // 如果触发 add-email，用 hotmail 卡密的邮箱绑定 + IMAP 接 OTP
         let bindEmail = "";
         let fetchAddEmailOtp: (() => Promise<string>) | undefined = undefined;
+
+        // 初始化数据库用于 Hotmail 邮箱去重
+        let hotmailDb: LocalDB | undefined;
+        try {
+          const dbPath = "data/codex-register.sqlite";
+          hotmailDb = new LocalDB(dbPath);
+          // 导入 Hotmail 邮箱到数据库（如果尚未导入）
+          const {readFileSync, existsSync} = await import("node:fs");
+          const hotmailTokensPath = "hotmail/tokens.txt";
+          if (existsSync(hotmailTokensPath)) {
+            const tokensContent = readFileSync(hotmailTokensPath, "utf8");
+            const accounts = tokensContent
+              .split(/\r?\n/)
+              .filter(line => line.trim())
+              .map(line => {
+                const [email, password, client_id, refresh_token] = line.split("----");
+                return {email, password, client_id, refresh_token};
+              })
+              .filter(a => a.email && a.password);
+            const imported = hotmailDb.importHotmailAccounts(accounts);
+            if (imported > 0) {
+              console.log(`[phone-signup] 导入 ${imported} 个新 Hotmail 邮箱到数据库`);
+            }
+          }
+        } catch (dbErr) {
+          console.warn(`[phone-signup] 初始化数据库失败（邮箱去重不可用）: ${(dbErr as Error).message}`);
+        }
+
         try {
             const {createHotmailProvider} = await import("./mail/hotmail.js");
-            const hotmailProvider = createHotmailProvider();
+            const hotmailProvider = createHotmailProvider(hotmailDb);
             bindEmail = await hotmailProvider.getEmailAddress();
             console.log(`[phone-signup] add-email 候选邮箱: ${bindEmail}`);
             // 记录 fetch 调用时刻作为最低时间戳，避免读到旧邮件
@@ -594,7 +657,19 @@ async function runOnce(): Promise<void> {
                 return await (hotmailProvider as any).getEmailVerificationCode(bindEmail, {minTimestampMs: startedAt});
             };
         } catch (e) {
-            console.warn(`[phone-signup] hotmail 邮箱准备失败 (无 add-email 兜底): ${(e as Error).message}`);
+            const errMsg = (e as Error).message;
+            // 如果是邮箱池用完的错误，结束任务
+            if (errMsg.includes("Hotmail 邮箱池已用完")) {
+                console.error(`[phone-signup] ❌ ${errMsg}`);
+                console.error(`[phone-signup] 任务结束：没有可用的邮箱，请补充新账号后重试`);
+                if (hotmailDb) {
+                  const stats = hotmailDb.getHotmailAccountStats();
+                  console.log(`[phone-signup] 当前邮箱池状态: 全新=${stats.unused} 可重试=${stats.retryable} 已用=${stats.used} 失败=${stats.failed}`);
+                  hotmailDb.close();
+                }
+                return;  // 结束任务
+            }
+            console.warn(`[phone-signup] hotmail 邮箱准备失败 (无 add-email 兜底): ${errMsg}`);
         }
 
         const webLoginClient = new OpenAIClient({
@@ -807,6 +882,37 @@ async function main() {
     const authOnly = hasFlag("--auth");
     const manualOtp = hasFlag("--otp");
     const maxRounds = readNumberArg("--n");
+
+    // 启动时初始化数据库并导入 Hotmail 邮箱
+    try {
+      const dbPath = "data/codex-register.sqlite";
+      const initDb = new LocalDB(dbPath);
+
+      // 导入 Hotmail 邮箱到数据库
+      const {readFileSync, existsSync} = await import("node:fs");
+      const hotmailTokensPath = "hotmail/tokens.txt";
+      if (existsSync(hotmailTokensPath)) {
+        const tokensContent = readFileSync(hotmailTokensPath, "utf8");
+        const accounts = tokensContent
+          .split(/\r?\n/)
+          .filter(line => line.trim())
+          .map(line => {
+            const [email, password, client_id, refresh_token] = line.split("----");
+            return {email, password, client_id, refresh_token};
+          })
+          .filter(a => a.email && a.password);
+        const imported = initDb.importHotmailAccounts(accounts);
+        if (imported > 0) {
+          console.log(`[启动] 导入 ${imported} 个新 Hotmail 邮箱到数据库`);
+        }
+        const stats = initDb.getHotmailAccountStats();
+        console.log(`[启动] Hotmail 邮箱池状态: 全新=${stats.unused} 可重试=${stats.retryable} 已用=${stats.used} 失败=${stats.failed}`);
+      }
+
+      initDb.close();
+    } catch (initErr) {
+      console.warn(`[启动] 初始化数据库失败: ${(initErr as Error).message}`);
+    }
 
     if (hasFlag("--profile-geo-check")) {
         const {resolveProfileLocale} = await import("./profile-generator.js");
@@ -1136,6 +1242,73 @@ async function main() {
         return;
     }
 
+    if (hasFlag("--db-list-orphans")) {
+        const dbPath = readArgValue("--db-path").trim() || "data/codex-register.sqlite";
+        const db = new LocalDB(dbPath);
+        const showAll = hasFlag("--all");
+        const orphans = db.listOrphanedAccounts(showAll ? undefined : false);
+        const stats = db.getOrphanedAccountStats();
+
+        console.log(`\n[db] 孤儿账号列表 (未解决: ${stats.unresolved} | 已解决: ${stats.resolved} | 总计: ${stats.total}):\n`);
+        for (const orphan of orphans) {
+          const status = orphan.resolved ? "✅ 已解决" : "❌ 未解决";
+          console.log(`  ID: ${orphan.id}`);
+          console.log(`  Phone: ${orphan.phone}`);
+          console.log(`  Email: ${orphan.email}`);
+          console.log(`  Error Type: ${orphan.error_type}`);
+          console.log(`  Error Message: ${orphan.error_message || "-"}`);
+          console.log(`  OpenAI Registered: ${orphan.openai_registered ? "是" : "否"}`);
+          console.log(`  Status: ${status}`);
+          console.log(`  Created: ${orphan.created_at}`);
+          if (orphan.resolved) {
+            console.log(`  Resolved At: ${orphan.resolved_at}`);
+            console.log(`  Note: ${orphan.resolved_note || "-"}`);
+          }
+          console.log("");
+        }
+        db.close();
+        return;
+    }
+
+    if (hasFlag("--db-resolve-orphan")) {
+        const dbPath = readArgValue("--db-path").trim() || "data/codex-register.sqlite";
+        const orphanId = readNumberArg("--db-resolve-orphan");
+        if (!orphanId) {
+          throw new Error("使用 --db-resolve-orphan 时必须指定孤儿账号 ID (例如: --db-resolve-orphan 1)");
+        }
+        const note = readArgValue("--note").trim() || "";
+        const db = new LocalDB(dbPath);
+        db.resolveOrphanedAccount(orphanId, note);
+        console.log(`[db] 孤儿账号 ID=${orphanId} 已标记为解决`);
+        if (note) {
+          console.log(`[db] 备注: ${note}`);
+        }
+        db.close();
+        return;
+    }
+
+    if (hasFlag("--db-list-hotmail")) {
+        const dbPath = readArgValue("--db-path").trim() || "data/codex-register.sqlite";
+        const db = new LocalDB(dbPath);
+        const filterStatus = readArgValue("--status").trim();  // unused / used / failed
+        const accounts = db.listHotmailAccounts(filterStatus || undefined);
+        const stats = db.getHotmailAccountStats();
+
+        console.log(`\n[db] Hotmail 邮箱池状态 (全新: ${stats.unused} | 可重试: ${stats.retryable} | 已用: ${stats.used} | 失败: ${stats.failed} | 总计: ${stats.total}):\n`);
+        for (const account of accounts) {
+          const statusEmoji = account.status === "unused" ? "🟢" : account.status === "retryable" ? "🟡" : account.status === "used" ? "🔵" : "🔴";
+          const statusText = account.status === "unused" ? "全新" : account.status === "retryable" ? "可重试" : account.status === "used" ? "已用" : "失败";
+          console.log(`  ${statusEmoji} ID: ${account.id}`);
+          console.log(`  Email: ${account.email}`);
+          console.log(`  Status: ${statusText} (${account.status})`);
+          console.log(`  Used At: ${account.used_at || "-"}`);
+          console.log(`  Created: ${account.created_at}`);
+          console.log("");
+        }
+        db.close();
+        return;
+    }
+
     if (authOnly) {
         if (!manualEmail) {
             throw new Error("使用 --auth 时必须同时指定 --email");
@@ -1182,7 +1355,7 @@ async function main() {
 
     if (manualEmail) {
         try {
-            await runOnce();
+            await runOnce(db);
         } catch (error) {
             console.error(`[❌️授权失败]`, error);
         }
@@ -1201,7 +1374,7 @@ async function main() {
                 mode: "single",
             });
 
-            await runOnce();
+            await runOnce(db);
         } catch (error) {
             console.error(`[❌️授权失败]`, error);
             process.exitCode = 1;
@@ -1229,7 +1402,7 @@ async function main() {
             `第 ${round} 轮开始: 成功=${successCount} 失败=${failCount} 模式=自动`,
         );
         try {
-            await runOnce();
+            await runOnce(db);
             successCount += 1;
         } catch (error) {
             failCount += 1;

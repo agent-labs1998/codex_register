@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codex Register 数据库管理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0d1117;color:#c9d1d9}
+.header{background:#161b22;padding:16px 24px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:16px}
+.header h1{font-size:18px;color:#f0f6fc}
+.stats{display:flex;gap:12px}
+.stat{background:#21262d;padding:8px 16px;border-radius:6px;font-size:13px}
+.stat b{color:#58a6ff}
+.tabs{display:flex;gap:2px;padding:12px 24px 0;background:#161b22}
+.tab{padding:8px 16px;cursor:pointer;border-radius:6px 6px 0 0;font-size:13px;color:#8b949e;border:1px solid transparent}
+.tab.active{background:#0d1117;color:#f0f6fc;border-color:#30363d;border-bottom-color:#0d1117}
+.tab:hover{color:#f0f6fc}
+.content{padding:16px 24px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#161b22;padding:8px 12px;text-align:left;color:#8b949e;font-weight:600;border-bottom:2px solid #30363d;position:sticky;top:0}
+td{padding:6px 12px;border-bottom:1px solid #21262d;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr:hover{background:#161b22}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500}
+.badge-active{background:#1b4332;color:#3fb950}
+.badge-failed{background:#3d1f1f;color:#f85149}
+.badge-running{background:#1a2744;color:#58a6ff}
+.badge-partial{background:#3d3520;color:#d29922}
+.token{font-family:monospace;font-size:11px}
+.empty{text-align:center;padding:40px;color:#484f58}
+#loading{text-align:center;padding:40px;color:#484f58}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Codex Register 数据库</h1>
+  <div class="stats" id="stats"></div>
+</div>
+<div class="tabs" id="tabs"></div>
+<div class="content" id="content"><div id="loading">加载中...</div></div>
+<script>
+const TABS = [
+  { key: "accounts", label: "成功账号", api: "/api/accounts", cols: ["id","phone","email","ip_address","ip_country","ip_city","ip_isp","status","created_at","access_token"], colNames: {id:"ID",phone:"手机号",email:"邮箱",ip_address:"IP地址",ip_country:"国家",ip_city:"城市",ip_isp:"运营商",status:"状态",created_at:"创建时间",access_token:"Token"} },
+  { key: "runs", label: "运行记录", api: "/api/runs", cols: ["id","workflow_name","status","started_at","finished_at","success_count","failure_count"], colNames: {id:"ID",workflow_name:"工作流",status:"状态",started_at:"开始时间",finished_at:"结束时间",success_count:"成功数",failure_count:"失败数"} },
+  { key: "workers", label: "Worker 节点", api: "/api/workers", cols: ["id","worker_id","run_id","phone","bind_email","status","last_error","created_at"], colNames: {id:"ID",worker_id:"Worker ID",run_id:"运行ID",phone:"手机号",bind_email:"绑定邮箱",status:"状态",last_error:"错误信息",created_at:"创建时间"} },
+  { key: "attempts", label: "注册尝试", api: "/api/attempts", cols: ["id","run_id","phone","email","status","error","cpa_status","cpa_auth_file","started_at","finished_at"], colNames: {id:"ID",run_id:"运行ID",phone:"手机号",email:"邮箱",status:"状态",error:"错误",cpa_status:"CPA状态",cpa_auth_file:"Auth文件",started_at:"开始时间",finished_at:"结束时间"} },
+];
+let activeTab = "accounts";
+let cache = {};
+
+async function loadStats() {
+  const r = await fetch("/api/stats");
+  const d = await r.json();
+  document.getElementById("stats").innerHTML =
+    '<div class="stat">成功账号: <b>' + d.accounts + '</b></div>' +
+    '<div class="stat">运行记录: <b>' + d.runs + '</b></div>' +
+    '<div class="stat">Worker 节点: <b>' + d.workers + '</b></div>';
+}
+
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = TABS.map(function(t) {
+    return '<div class="tab ' + (t.key === activeTab ? "active" : "") + '" onclick="switchTab(\'' + t.key + '\')">' + t.label + '</div>';
+  }).join("");
+}
+
+async function switchTab(key) {
+  activeTab = key;
+  renderTabs();
+  await renderTable();
+}
+
+function badge(val) {
+  if (!val) return "";
+  var s = String(val).toLowerCase();
+  var cls = (s === "active" || s === "ok" || s === "success") ? "badge-active"
+    : s === "failed" ? "badge-failed"
+    : s === "running" ? "badge-running"
+    : s === "partial" ? "badge-partial" : "";
+  var label = (s === "active") ? "正常"
+    : (s === "ok" || s === "success") ? "成功"
+    : s === "failed" ? "失败"
+    : s === "running" ? "运行中"
+    : s === "partial" ? "部分成功"
+    : s === "timed_out" ? "超时"
+    : s === "cancelled" ? "已取消"
+    : val;
+  return cls ? '<span class="badge ' + cls + '">' + label + '</span>' : label;
+}
+
+function formatVal(key, val) {
+  if (val == null) return '<span style="color:#484f58">-</span>';
+  if (key === "status") return badge(val);
+  if (key === "access_token") return '<span class="token">' + String(val).slice(0, 40) + '...</span>';
+  if (key === "last_error" || key === "error") return '<span style="color:#f85149" title="' + val + '">' + String(val).slice(0, 80) + '</span>';
+  return val;
+}
+
+async function renderTable() {
+  var tab = TABS.find(function(t) { return t.key === activeTab; });
+  document.getElementById("content").innerHTML = '<div id="loading">加载中...</div>';
+  if (!cache[tab.key]) {
+    var r = await fetch(tab.api);
+    cache[tab.key] = await r.json();
+  }
+  var rows = cache[tab.key];
+  if (!rows.length) { document.getElementById("content").innerHTML = '<div class="empty">暂无数据</div>'; return; }
+  var html = "<table><thead><tr>";
+  tab.cols.forEach(function(c) { html += "<th>" + (tab.colNames[c] || c) + "</th>"; });
+  html += "</tr></thead><tbody>";
+  rows.forEach(function(r) {
+    html += "<tr>";
+    tab.cols.forEach(function(c) { html += "<td>" + formatVal(c, r[c]) + "</td>"; });
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+  document.getElementById("content").innerHTML = html;
+}
+
+async function init() {
+  renderTabs();
+  await loadStats();
+  await renderTable();
+  setInterval(function() { cache = {}; loadStats(); renderTable(); }, 10000);
+}
+init();
+</script>
+</body>
+</html>

@@ -67,6 +67,33 @@ interface WorkerSlot {
   retry_count: number;
 }
 
+interface HotmailAccount {
+  id: number;
+  email: string;
+  password: string;
+  client_id: string;
+  refresh_token: string;
+  status: string;  // unused / used / failed
+  used_at: string | null;
+  created_at: string;
+}
+
+interface OrphanedAccount {
+  id: number;
+  phone: string;
+  email: string;
+  password: string;
+  activation_id: string | null;
+  error_type: string;  // email_already_in_use / email_otp_failed / cpa_callback_failed / other
+  error_message: string | null;
+  sms_code: string | null;
+  openai_registered: number;  // 1=OpenAI 已注册成功，0=未创建
+  resolved: number;  // 0=未解决，1=已手动解决
+  resolved_at: string | null;
+  resolved_note: string | null;
+  created_at: string;
+}
+
 export class LocalDB {
   private db: DatabaseSync;
 
@@ -155,6 +182,36 @@ export class LocalDB {
 
       CREATE INDEX IF NOT EXISTS idx_worker_slots_run_id ON worker_slots(run_id);
       CREATE INDEX IF NOT EXISTS idx_worker_slots_status ON worker_slots(status);
+
+      CREATE TABLE IF NOT EXISTS hotmail_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        client_id TEXT,
+        refresh_token TEXT,
+        status TEXT NOT NULL DEFAULT 'unused',  -- unused / used / failed
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_hotmail_status ON hotmail_accounts(status);
+
+      CREATE TABLE IF NOT EXISTS orphaned_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password TEXT NOT NULL,
+        activation_id TEXT,
+        error_type TEXT NOT NULL,          -- email_already_in_use / email_otp_failed / cpa_callback_failed / other
+        error_message TEXT,
+        sms_code TEXT,                     -- 收到的短信验证码（如果有的话）
+        openai_registered INTEGER DEFAULT 1,  -- OpenAI 是否已注册成功
+        resolved INTEGER DEFAULT 0,        -- 是否已手动解决
+        resolved_at TEXT,
+        resolved_note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_orphaned_resolved ON orphaned_accounts(resolved);
+      CREATE INDEX IF NOT EXISTS idx_orphaned_phone ON orphaned_accounts(phone);
     `);
   }
 
@@ -342,6 +399,135 @@ export class LocalDB {
   deleteWorkerSlot(workerId: string): void {
     const stmt = this.db.prepare("DELETE FROM worker_slots WHERE worker_id = ?");
     stmt.run(workerId);
+  }
+
+  // ─── Hotmail 邮箱管理 ───
+
+  importHotmailAccounts(accounts: Array<{email: string, password: string, client_id: string, refresh_token: string}>): number {
+    let imported = 0;
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO hotmail_accounts (email, password, client_id, refresh_token)
+      VALUES (?, ?, ?, ?)
+    `);
+    for (const account of accounts) {
+      const result = stmt.run(account.email, account.password, account.client_id, account.refresh_token);
+      if (result.changes > 0) {
+        imported++;
+      }
+    }
+    return imported;
+  }
+
+  getUnusedHotmailAccount(): HotmailAccount | null {
+    // 优先使用全新未用的邮箱（unused），如果没有再使用可重试的邮箱（retryable）
+    const stmt = this.db.prepare(`
+      SELECT * FROM hotmail_accounts
+      WHERE status IN ('unused', 'retryable')
+      ORDER BY
+        CASE status
+          WHEN 'unused' THEN 0
+          WHEN 'retryable' THEN 1
+        END,
+        created_at ASC
+      LIMIT 1
+    `);
+    return stmt.get() as HotmailAccount | null;
+  }
+
+  markHotmailAccountUsed(email: string): void {
+    const stmt = this.db.prepare("UPDATE hotmail_accounts SET status = 'used', used_at = datetime('now') WHERE email = ?");
+    stmt.run(email);
+  }
+
+  markHotmailAccountFailed(email: string): void {
+    const stmt = this.db.prepare("UPDATE hotmail_accounts SET status = 'failed', used_at = datetime('now') WHERE email = ?");
+    stmt.run(email);
+  }
+
+  markHotmailAccountRetryable(email: string): void {
+    // 标记为可重试（网络超时等错误，可以被其他手机号重试）
+    const stmt = this.db.prepare("UPDATE hotmail_accounts SET status = 'retryable', used_at = datetime('now') WHERE email = ?");
+    stmt.run(email);
+  }
+
+  resetHotmailAccount(email: string): void {
+    // 重置为可重试状态（而不是 unused，这样可以区分全新邮箱和重试邮箱）
+    const stmt = this.db.prepare("UPDATE hotmail_accounts SET status = 'retryable', used_at = datetime('now') WHERE email = ?");
+    stmt.run(email);
+  }
+
+  listHotmailAccounts(status?: string): HotmailAccount[] {
+    if (status) {
+      const stmt = this.db.prepare("SELECT * FROM hotmail_accounts WHERE status = ? ORDER BY created_at DESC");
+      return stmt.all(status) as HotmailAccount[];
+    }
+    const stmt = this.db.prepare("SELECT * FROM hotmail_accounts ORDER BY created_at DESC");
+    return stmt.all() as HotmailAccount[];
+  }
+
+  getHotmailAccountStats(): {unused: number, retryable: number, used: number, failed: number, total: number} {
+    const unused = (this.db.prepare("SELECT COUNT(*) as count FROM hotmail_accounts WHERE status = 'unused'").get() as any).count;
+    const retryable = (this.db.prepare("SELECT COUNT(*) as count FROM hotmail_accounts WHERE status = 'retryable'").get() as any).count;
+    const used = (this.db.prepare("SELECT COUNT(*) as count FROM hotmail_accounts WHERE status = 'used'").get() as any).count;
+    const failed = (this.db.prepare("SELECT COUNT(*) as count FROM hotmail_accounts WHERE status = 'failed'").get() as any).count;
+    const total = (this.db.prepare("SELECT COUNT(*) as count FROM hotmail_accounts").get() as any).count;
+    return {unused, retryable, used, failed, total};
+  }
+
+  hasAvailableHotmailAccounts(): boolean {
+    // 检查是否还有可用的邮箱（unused 或 retryable）
+    const count = (this.db.prepare("SELECT COUNT(*) as count FROM hotmail_accounts WHERE status IN ('unused', 'retryable')").get() as any).count;
+    return count > 0;
+  }
+
+  // ─── 孤儿账号管理 ───
+
+  saveOrphanedAccount(account: {
+    phone: string;
+    email: string;
+    password: string;
+    activation_id?: string;
+    error_type: string;
+    error_message?: string;
+    sms_code?: string;
+    openai_registered?: number;
+  }): number {
+    const stmt = this.db.prepare(`
+      INSERT INTO orphaned_accounts (phone, email, password, activation_id, error_type, error_message, sms_code, openai_registered)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      account.phone,
+      account.email,
+      account.password,
+      account.activation_id || null,
+      account.error_type,
+      account.error_message || null,
+      account.sms_code || null,
+      account.openai_registered ?? 1
+    );
+    return result.lastInsertRowid as number;
+  }
+
+  listOrphanedAccounts(resolved?: boolean): OrphanedAccount[] {
+    if (resolved !== undefined) {
+      const stmt = this.db.prepare("SELECT * FROM orphaned_accounts WHERE resolved = ? ORDER BY created_at DESC");
+      return stmt.all(resolved ? 1 : 0) as OrphanedAccount[];
+    }
+    const stmt = this.db.prepare("SELECT * FROM orphaned_accounts ORDER BY created_at DESC");
+    return stmt.all() as OrphanedAccount[];
+  }
+
+  resolveOrphanedAccount(id: number, note: string): void {
+    const stmt = this.db.prepare("UPDATE orphaned_accounts SET resolved = 1, resolved_at = datetime('now'), resolved_note = ? WHERE id = ?");
+    stmt.run(note, id);
+  }
+
+  getOrphanedAccountStats(): {unresolved: number, resolved: number, total: number} {
+    const unresolved = (this.db.prepare("SELECT COUNT(*) as count FROM orphaned_accounts WHERE resolved = 0").get() as any).count;
+    const resolved = (this.db.prepare("SELECT COUNT(*) as count FROM orphaned_accounts WHERE resolved = 1").get() as any).count;
+    const total = (this.db.prepare("SELECT COUNT(*) as count FROM orphaned_accounts").get() as any).count;
+    return {unresolved, resolved, total};
   }
 
   close(): void {

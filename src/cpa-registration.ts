@@ -23,6 +23,17 @@ export interface RegistrationTask {
   db?: {
     updateWorkerSlot(workerId: string, data: Record<string, any>): void;
     updateAttempt(attemptId: number, data: Record<string, any>): void;
+    markHotmailAccountFailed?(email: string): void;
+    resetHotmailAccount?(email: string): void;
+    saveOrphanedAccount?(account: {
+      phone: string;
+      email: string;
+      password: string;
+      activation_id?: string;
+      error_type: string;
+      error_message?: string;
+      openai_registered?: number;
+    }): void;
   };
 }
 
@@ -234,13 +245,58 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
     console.log(`[CPA] ② ✓ OAuth 登录完成`);
   } catch (error) {
+    const errMsg = (error as Error).message;
+
+    // 邮箱绑定失败时，处理邮箱状态和孤儿账号
+    if (bindEmail && db) {
+      if (errMsg.includes("email_already_in_use")) {
+        // 邮箱已被占用，标记为失败
+        console.warn(`[cpa-registration] ${workerId} 邮箱 ${bindEmail} 已被占用，标记为 failed`);
+        if (db.markHotmailAccountFailed) {
+          db.markHotmailAccountFailed(bindEmail);
+        }
+        // 存储孤儿账号
+        if (db.saveOrphanedAccount) {
+          db.saveOrphanedAccount({
+            phone: phoneNumber,
+            email: bindEmail,
+            password,
+            activation_id: activationId,
+            error_type: "email_already_in_use",
+            error_message: errMsg,
+            openai_registered: 1,
+          });
+          console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（邮箱已被占用）`);
+        }
+      } else {
+        // 其他错误（网络超时等），标记为可重试（retryable）
+        console.warn(`[cpa-registration] ${workerId} OAuth 登录失败，标记邮箱 ${bindEmail} 为可重试（retryable）`);
+        if (db.resetHotmailAccount) {
+          db.resetHotmailAccount(bindEmail);  // 会标记为 retryable
+        }
+        // 也存储孤儿账号，方便后续追踪
+        if (db.saveOrphanedAccount) {
+          db.saveOrphanedAccount({
+            phone: phoneNumber,
+            email: bindEmail,
+            password,
+            activation_id: activationId,
+            error_type: "other",
+            error_message: errMsg,
+            openai_registered: 1,
+          });
+          console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（OAuth 登录失败）`);
+        }
+      }
+    }
+
     reportStatus("failed");
     return {
       status: "failed",
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: `OAuth login failed: ${(error as Error).message}`,
+      error: `OAuth login failed: ${errMsg}`,
       activationId,
       workerId,
       attemptId,
@@ -260,13 +316,30 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     console.log(`[CPA] ③ ✓ 入库成功 status=${status}`);
     log.debug(`[CPA] ③ 响应:`, body.slice(0, 500));
   } catch (error) {
+    const errMsg = (error as Error).message;
+
+    // CPA 入库失败时，存储孤儿账号（OpenAI 账号已创建但 CPA 未收到）
+    if (bindEmail && db && db.saveOrphanedAccount) {
+      console.warn(`[cpa-registration] ${workerId} CPA 入库失败，存储孤儿账号`);
+      db.saveOrphanedAccount({
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        activation_id: activationId,
+        error_type: "cpa_callback_failed",
+        error_message: errMsg,
+        openai_registered: 1,
+      });
+      console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（CPA 入库失败）`);
+    }
+
     reportStatus("failed");
     return {
       status: "failed",
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: `CPA callback failed: ${(error as Error).message}`,
+      error: `CPA callback failed: ${errMsg}`,
       activationId,
       workerId,
       attemptId,

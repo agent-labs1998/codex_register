@@ -380,6 +380,10 @@ workflow 批量执行模式，支持：
 - `--db-list-accounts`
 - `--db-list-runs`
 - `--db-export-tokens`
+- `--db-list-orphans`（查看未解决的孤儿账号：手机号已注册但邮箱绑定失败）
+- `--db-list-orphans --all`（查看所有孤儿账号，含已解决）
+- `--db-resolve-orphan <id> --note "备注"`（标记孤儿账号为已解决）
+- `--db-list-hotmail`（查看 Hotmail 邮箱池状态：已用/未用/失败）
 
 ---
 

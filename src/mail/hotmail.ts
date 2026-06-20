@@ -5,6 +5,7 @@ import path from "node:path";
 import {ImapFlow} from "imapflow";
 import {generateEmailName} from "./generate-email-name.js";
 import {findLatestVerificationMail} from "./verification-matcher.js";
+import {LocalDB} from "../local-db.js";
 
 const HOTMAIL_TOKEN_DIR = path.resolve(process.cwd(), "hotmail");
 
@@ -814,9 +815,28 @@ async function waitForVerificationViaIdle(targetEmail, account, minTimestampMs =
     return null;
 }
 
-export function createHotmailProvider() {
+export function createHotmailProvider(db?: LocalDB) {
     return {
         async getEmailAddress() {
+            // 优先从数据库查询未用的邮箱（去重管理）
+            if (db) {
+                // 优先使用全新未用的邮箱（unused），如果没有再使用可重试的邮箱（retryable）
+                const availableAccount = db.getUnusedHotmailAccount();
+                if (availableAccount) {
+                    db.markHotmailAccountUsed(availableAccount.email);
+                    const statusTag = availableAccount.status === 'unused' ? '全新' : '可重试';
+                    console.log(`[hotmail] 从数据库获取${statusTag}邮箱: ${availableAccount.email}`);
+                    return availableAccount.email;
+                }
+                // 检查是否所有邮箱都已用完（unused + retryable 都没有）
+                if (!db.hasAvailableHotmailAccounts()) {
+                    const stats = db.getHotmailAccountStats();
+                    console.log(`[hotmail] 邮箱池状态: 全新=${stats.unused} 可重试=${stats.retryable} 已用=${stats.used} 失败=${stats.failed}`);
+                    throw new Error("Hotmail 邮箱池已用完，请补充新账号。已用: " + stats.used + ", 失败: " + stats.failed);
+                }
+            }
+
+            // 回退到原有逻辑：随机选择
             const accounts = await loadAccounts();
             const account = chooseRandomAccount(accounts);
             const aliasEmail = buildAliasAddress(account);
