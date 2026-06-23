@@ -523,6 +523,20 @@ export class LocalDB {
     stmt.run(note, id);
   }
 
+  updateOrphanedNote(id: number, note: string): void {
+    const stmt = this.db.prepare("UPDATE orphaned_accounts SET resolved_note = ? WHERE id = ?");
+    stmt.run(note, id);
+  }
+
+  getUnresolvedOrphans(limit?: number): OrphanedAccount[] {
+    if (limit !== undefined) {
+      const stmt = this.db.prepare("SELECT * FROM orphaned_accounts WHERE resolved = 0 ORDER BY created_at ASC LIMIT ?");
+      return stmt.all(limit) as OrphanedAccount[];
+    }
+    const stmt = this.db.prepare("SELECT * FROM orphaned_accounts WHERE resolved = 0 ORDER BY created_at ASC");
+    return stmt.all() as OrphanedAccount[];
+  }
+
   getOrphanedAccountStats(): {unresolved: number, resolved: number, total: number} {
     const unresolved = (this.db.prepare("SELECT COUNT(*) as count FROM orphaned_accounts WHERE resolved = 0").get() as any).count;
     const resolved = (this.db.prepare("SELECT COUNT(*) as count FROM orphaned_accounts WHERE resolved = 1").get() as any).count;

@@ -45,6 +45,6 @@ export async function getEmailAddress(): Promise<string> {
   return provider.getEmailAddress();
 }
 
-export async function getEmailVerificationCode(email: string): Promise<string> {
-  return provider.getEmailVerificationCode(email);
+export async function getEmailVerificationCode(email: string, options?: {minTimestampMs?: number}): Promise<string> {
+  return provider.getEmailVerificationCode(email, options);
 }

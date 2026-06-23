@@ -1287,6 +1287,31 @@ async function main() {
         return;
     }
 
+    if (hasFlag("--recover-orphans")) {
+        const dbPath = readArgValue("--db-path").trim() || "data/codex-register.sqlite";
+        const maxAttempts = readNumberArg("--max") || 10;
+        const cpaBase = readArgValue("--cpa-base").trim() || process.env.CPA_BASE_URL?.trim() || appConfig.cliproxyApiBaseUrl || "";
+        const cpaKey = readArgValue("--cpa-key").trim() || process.env.CPA_MANAGEMENT_KEY?.trim() || appConfig.cliproxyApiManagementKey || "";
+
+        if (!cpaBase || !cpaKey) {
+          throw new Error("缺少 CPA 配置: 需要 --cpa-base 和 --cpa-key 参数，或在 config.json 中配置");
+        }
+
+        const db = new LocalDB(dbPath);
+        const { recoverOrphans } = await import("./recover-orphans.js");
+
+        console.log(`\n[恢复] 开始恢复孤儿账号 (最多 ${maxAttempts} 条)...`);
+        const result = await recoverOrphans({ db, maxAttempts, cpaBase, cpaKey });
+
+        console.log(`\n[恢复] ===== 最终统计 =====`);
+        console.log(`[恢复] 成功: ${result.success}`);
+        console.log(`[恢复] 失败: ${result.failed}`);
+        console.log(`[恢复] 跳过: ${result.skipped}`);
+
+        db.close();
+        return;
+    }
+
     if (hasFlag("--db-list-hotmail")) {
         const dbPath = readArgValue("--db-path").trim() || "data/codex-register.sqlite";
         const db = new LocalDB(dbPath);
