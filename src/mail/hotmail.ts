@@ -6,7 +6,6 @@ import {ImapFlow} from "imapflow";
 import {generateEmailName} from "./generate-email-name.js";
 import {findLatestVerificationMail} from "./verification-matcher.js";
 import {LocalDB} from "../local-db.js";
-import {proxyFetch} from "../proxy-fetch.js";
 
 const HOTMAIL_TOKEN_DIR = path.resolve(process.cwd(), "hotmail");
 
@@ -244,7 +243,7 @@ async function refreshAccessToken(account) {
         let networkErr = null;
         for (let attempt = 1; attempt <= 4; attempt += 1) {
             try {
-                response = await proxyFetch(HOTMAIL_OAUTH_TOKEN_URL, {
+                response = await fetch(HOTMAIL_OAUTH_TOKEN_URL, {
                     method: "POST",
                     headers: {
                         Accept: "application/json",
