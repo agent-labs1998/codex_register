@@ -96,19 +96,22 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
         console.log(`[恢复] ✓ CPA 入库响应成功`);
 
         // Step 5: 拉取 auth 文件获取 access_token
+        // CPA 用 ID token 里的旧邮箱命名文件，所以用旧邮箱搜索
         console.log(`[恢复] 拉取 auth 文件...`);
         const { listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
-        const emailLc = newEmail.toLowerCase();
-        const candidates = [`codex-${emailLc}.json`, `codex-${emailLc}-plus.json`];
+        const oldEmailLc = orphan.email.toLowerCase();
+        const oldCandidates = [`codex-${oldEmailLc}.json`, `codex-${oldEmailLc}-plus.json`];
 
         let accessToken = "";
+        let matchedFileName = "";
         for (let attempt = 1; attempt <= 12; attempt++) {
           const files = await listAuthFiles(cpaBase, cpaKey);
-          const match = files.find((f: any) => candidates.includes(String(f.name || "").toLowerCase()));
+          const match = files.find((f: any) => oldCandidates.includes(String(f.name || "").toLowerCase()));
           if (match) {
             console.log(`[恢复] ✓ 匹配到 auth 文件: ${match.name}`);
             const auth = await downloadAuthFile(cpaBase, cpaKey, match.name);
             accessToken = String(auth?.access_token || "").trim();
+            matchedFileName = match.name;
             break;
           }
           if (attempt < 12) {
@@ -116,8 +119,19 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
           }
         }
 
+        // Step 6: 删除 CPA 旧邮箱的 auth 文件（避免后续混淆）
+        if (matchedFileName) {
+          try {
+            const { deleteAuthFile } = await import("./cpa-codex.js");
+            await deleteAuthFile(cpaBase, cpaKey, matchedFileName);
+            console.log(`[恢复] ✓ 已删除 CPA 旧记录: ${matchedFileName}`);
+          } catch (e) {
+            console.log(`[恢复] ⚠ 删除旧 auth 文件失败: ${(e as Error).message}`);
+          }
+        }
+
         if (accessToken) {
-          // Step 6: 写入 accounts 表
+          // Step 7: 用新邮箱写入 accounts 表
           db.saveAccount({
             phone: orphan.phone,
             email: newEmail,
@@ -128,7 +142,7 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
             cpa_base_url: cpaBase,
             status: "active",
           });
-          console.log(`[恢复] ✓ 已写入 accounts 表`);
+          console.log(`[恢复] ✓ 已写入 accounts 表（邮箱: ${newEmail}）`);
         } else {
           console.log(`[恢复] ⚠ 未获取到 access_token，但 CPA 入库成功`);
         }

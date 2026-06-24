@@ -159,6 +159,32 @@ export async function downloadAuthFile(
     }
 }
 
+export async function deleteAuthFile(
+    baseUrl: string,
+    managementKey: string,
+    name: string,
+    timeoutMs = 20000,
+): Promise<void> {
+    const url = `${baseUrl.replace(/\/+$/, "")}/v0/management/auth-files`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await undiciFetch(url, {
+            method: "DELETE",
+            headers: buildHeaders(managementKey),
+            body: JSON.stringify({ name }),
+            signal: controller.signal,
+            dispatcher: getCpaDispatcher(),
+        } as any);
+        if (!response.ok) {
+            const body = await response.text().catch(() => "");
+            throw new Error(`CPA delete auth-file 失败: status=${response.status} body=${body.slice(0, 300)}`);
+        }
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 export function getCpaBaseUrl(): string {
     return process.env.CPA_BASE_URL?.trim() || CPA_BASE_DEFAULT;
 }
