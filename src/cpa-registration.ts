@@ -32,6 +32,7 @@ export interface RegistrationTask {
       activation_id?: string;
       error_type: string;
       error_message?: string;
+      sms_code?: string | null;
       openai_registered?: number;
     }): void;
   };
@@ -264,6 +265,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
             activation_id: activationId,
             error_type: "email_already_in_use",
             error_message: errMsg,
+            sms_code: smsCode || null,
             openai_registered: 1,
           });
           console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（邮箱已被占用）`);
@@ -283,6 +285,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
             activation_id: activationId,
             error_type: "other",
             error_message: errMsg,
+            sms_code: smsCode || null,
             openai_registered: 1,
           });
           console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（OAuth 登录失败）`);
@@ -328,6 +331,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
         activation_id: activationId,
         error_type: "cpa_callback_failed",
         error_message: errMsg,
+        sms_code: smsCode || null,
         openai_registered: 1,
       });
       console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（CPA 入库失败）`);

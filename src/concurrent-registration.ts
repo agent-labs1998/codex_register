@@ -616,11 +616,12 @@ async function executeSingleRegistration(
         // 存储孤儿账号
         db.saveOrphanedAccount({
           phone: phoneNumber,
-          email: bindEmail,
+          email: bindEmail || "",
           password,
           activation_id: activationId,
           error_type: "email_already_in_use",
           error_message: errMsg,
+          sms_code: smsCode || null,
           openai_registered: 1,
         });
         console.log(`[concurrent] ${workerId} 已存储孤儿账号（邮箱已被占用）`);
@@ -636,6 +637,7 @@ async function executeSingleRegistration(
           activation_id: activationId,
           error_type: "other",
           error_message: errMsg,
+          sms_code: smsCode || null,
           openai_registered: 1,
         });
         console.log(`[concurrent] ${workerId} 已存储孤儿账号（OAuth 登录失败）`);
@@ -690,6 +692,7 @@ async function executeSingleRegistration(
         activation_id: activationId,
         error_type: "cpa_callback_failed",
         error_message: errMsg,
+        sms_code: smsCode || null,
         openai_registered: 1,
       });
       console.log(`[concurrent] ${workerId} 已存储孤儿账号（CPA 入库失败）`);
