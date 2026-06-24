@@ -83,26 +83,49 @@ data/codex-register.sqlite
 
 **注意：** coroabet 模式每次自动生成新邮箱，不需要去重。
 
-### 7. 孤儿账号存储
-当注册流程走到最后一步（邮箱绑定或 CPA 入库）失败时，OpenAI 账号已经创建但没有完成入库。程序自动将这类"孤儿账号"存入数据库，方便后续手动补救。
+### 7. 孤儿账号存储与自动恢复
+当注册流程走到最后一步（邮箱绑定或 CPA 入库）失败时，OpenAI 账号已经创建但没有完成入库。程序自动将这类"孤儿账号"存入数据库，支持自动恢复。
 
 **触发场景：**
 - `email_already_in_use` — 邮箱已被其他 OpenAI 账号绑定
 - `email_otp_failed` — 邮箱验证码失败
 - `cpa_callback_failed` — CPA 入库接口失败
 
-**存储信息：** 手机号、邮箱、密码、短信验证码、失败原因、时间
+**存储信息：** 手机号、原邮箱、密码、短信验证码、失败原因、恢复后的新邮箱（recovered_email）
 
-**手动补救流程：**
+**自动恢复（推荐）：**
 ```bash
-# 1. 查看未解决的孤儿账号
+# 恢复 1 个孤儿账号（自动生成 coroabet 新邮箱，登录 OpenAI 绑定，CPA 入库）
+npm run dev -- --recover-orphans --max 1
+
+# 恢复最多 10 个
+npm run dev -- --recover-orphans
+
+# 恢复指定数量
+npm run dev -- --recover-orphans --max 20
+```
+
+**恢复流程：**
+1. 从 `orphaned_accounts` 表读取 `resolved=0` 的记录
+2. 生成全新 coroabet 邮箱（不会与旧邮箱重复）
+3. 用手机号+密码登录 OpenAI
+4. 通过 CPA OAuth 授权绑定新邮箱
+5. 收邮箱验证码 → 提交 → CPA 入库
+6. 成功后写入 `accounts` 表，标记 `resolved=1`，记录 `recovered_email`
+
+**手动管理：**
+```bash
+# 查看未解决的孤儿账号
 npm run dev -- --db-list-orphans
 
-# 2. 手动为该手机号绑定新邮箱，完成注册
+# 查看所有（含已解决）
+npm run dev -- --db-list-orphans --all
 
-# 3. 标记为已解决
-npm run dev -- --db-resolve-orphan <id> --note "手动绑定了新邮箱"
+# 手动标记为已解决
+npm run dev -- --db-resolve-orphan <id> --note "备注"
 ```
+
+**Web 管理界面：** `http://服务器IP:8002` → "孤儿账号" Tab，显示原邮箱、恢复邮箱、失败类型、解决状态
 
 ---
 
@@ -428,6 +451,8 @@ workflow 批量执行模式，支持：
 - `--db-list-orphans --all`（查看所有孤儿账号，含已解决）
 - `--db-resolve-orphan <id> --note "备注"`（标记孤儿账号为已解决）
 - `--db-list-hotmail`（查看 Hotmail 邮箱池状态：已用/未用/失败）
+- `--recover-orphans`（自动恢复孤儿账号：登录→绑新邮箱→CPA 入库）
+- `--recover-orphans --max N`（指定最大恢复数量）
 
 ---
 
