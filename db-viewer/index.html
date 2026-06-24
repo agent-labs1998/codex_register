@@ -44,6 +44,8 @@ const TABS = [
   { key: "runs", label: "运行记录", api: "/api/runs", cols: ["id","workflow_name","status","started_at","finished_at","success_count","failure_count"], colNames: {id:"ID",workflow_name:"工作流",status:"状态",started_at:"开始时间",finished_at:"结束时间",success_count:"成功数",failure_count:"失败数"} },
   { key: "workers", label: "Worker 节点", api: "/api/workers", cols: ["id","worker_id","run_id","phone","bind_email","status","last_error","created_at"], colNames: {id:"ID",worker_id:"Worker ID",run_id:"运行ID",phone:"手机号",bind_email:"绑定邮箱",status:"状态",last_error:"错误信息",created_at:"创建时间"} },
   { key: "attempts", label: "注册尝试", api: "/api/attempts", cols: ["id","run_id","phone","email","status","error","cpa_status","cpa_auth_file","started_at","finished_at"], colNames: {id:"ID",run_id:"运行ID",phone:"手机号",email:"邮箱",status:"状态",error:"错误",cpa_status:"CPA状态",cpa_auth_file:"Auth文件",started_at:"开始时间",finished_at:"结束时间"} },
+  { key: "hotmail", label: "邮箱池", api: "/api/hotmail", cols: ["id","email","status","used_at","created_at"], colNames: {id:"ID",email:"邮箱",status:"状态",used_at:"使用时间",created_at:"创建时间"} },
+  { key: "orphans", label: "孤儿账号", api: "/api/orphans", cols: ["id","phone","email","recovered_email","error_type","error_message","sms_code","openai_registered","resolved","resolved_at","created_at"], colNames: {id:"ID",phone:"手机号",email:"原邮箱",recovered_email:"恢复邮箱",error_type:"失败类型",error_message:"错误信息",sms_code:"验证码",openai_registered:"已注册",resolved:"已解决",resolved_at:"解决时间",created_at:"创建时间"} },
 ];
 let activeTab = "accounts";
 let cache = {};
@@ -54,7 +56,9 @@ async function loadStats() {
   document.getElementById("stats").innerHTML =
     '<div class="stat">成功账号: <b>' + d.accounts + '</b></div>' +
     '<div class="stat">运行记录: <b>' + d.runs + '</b></div>' +
-    '<div class="stat">Worker 节点: <b>' + d.workers + '</b></div>';
+    '<div class="stat">Worker 节点: <b>' + d.workers + '</b></div>' +
+    '<div class="stat">邮箱池: <b>' + d.hotmail + '</b></div>' +
+    '<div class="stat">孤儿账号: <b>' + d.orphans + '</b></div>';
 }
 
 function renderTabs() {

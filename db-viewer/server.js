@@ -30,12 +30,16 @@ const server = createServer((req, res) => {
   if (url.pathname === "/api/runs") return jsonResponse(res, query(db, "SELECT * FROM workflow_runs ORDER BY id DESC"));
   if (url.pathname === "/api/workers") return jsonResponse(res, query(db, "SELECT * FROM worker_slots ORDER BY id DESC LIMIT 200"));
   if (url.pathname === "/api/attempts") return jsonResponse(res, query(db, "SELECT * FROM registration_attempts ORDER BY id DESC LIMIT 200"));
+  if (url.pathname === "/api/hotmail") return jsonResponse(res, query(db, "SELECT id, email, status, used_at, created_at FROM hotmail_accounts ORDER BY id DESC"));
+  if (url.pathname === "/api/orphans") return jsonResponse(res, query(db, "SELECT id, phone, email, recovered_email, error_type, error_message, sms_code, openai_registered, resolved, resolved_at, resolved_note, created_at FROM orphaned_accounts ORDER BY id DESC"));
   if (url.pathname === "/api/stats") {
     return jsonResponse(res, {
       accounts: count(db, "accounts"),
       runs: count(db, "workflow_runs"),
       workers: count(db, "worker_slots"),
       attempts: count(db, "registration_attempts"),
+      hotmail: count(db, "hotmail_accounts"),
+      orphans: count(db, "orphaned_accounts"),
     });
   }
 
