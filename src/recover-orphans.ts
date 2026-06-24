@@ -65,8 +65,14 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
       }
       console.log(`[恢复] 孤儿 #${seq} ${orphan.phone} → 新邮箱 ${newEmail}`);
 
-      // Step 2: 登录 OpenAI
-      console.log(`[恢复] 登录 OpenAI...`);
+      // Step 2: 获取 CPA 授权 URL
+      console.log(`[恢复] 获取 CPA 授权 URL...`);
+      const { requestCodexAuthUrl, submitOAuthCallback } = await import("./cpa-codex.js");
+      const { authorizeUrl } = await requestCodexAuthUrl(cpaBase, cpaKey);
+      console.log(`[恢复] ✓ CPA 授权 URL 已获取`);
+
+      // Step 3: 用 CPA 授权 URL 登录（走手机号+密码 → 绑新邮箱 → 收验证码 → 拿 callback）
+      console.log(`[恢复] 登录 OpenAI 并绑定邮箱...`);
       const client = new OpenAIClient({
         email: orphan.phone,
         password: orphan.password,
@@ -79,14 +85,12 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
         },
       });
 
-      // Step 3: 登录 + 绑邮箱 + 拿 callback
-      const result = await client.authLoginHTTP();
-      console.log(`[恢复] ✓ 登录成功`);
+      const callbackURL = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
+      console.log(`[恢复] ✓ 拿到 callback URL`);
 
       // Step 4: CPA 入库
       console.log(`[恢复] CPA 入库...`);
-      const { submitOAuthCallback } = await import("./cpa-codex.js");
-      const authResult = await submitOAuthCallback(cpaBase, cpaKey, result.callbackURL);
+      const authResult = await submitOAuthCallback(cpaBase, cpaKey, callbackURL);
 
       if (authResult.status === 200) {
         console.log(`[恢复] ✓ 入库成功`);
