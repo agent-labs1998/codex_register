@@ -2,7 +2,7 @@ import { appConfig } from "./config.js";
 import { generateRandomDeviceProfile } from "./device-profile.js";
 import { OpenAIClient } from "./openai.js";
 import { LocalDB } from "./local-db.js";
-import { getEmailAddress, getEmailVerificationCode } from "./mailbox.js";
+import { createCoroabetProvider } from "./mail/coroabet.js";
 import { log } from "./logger.js";
 
 export interface RecoverOrphansOptions {
@@ -45,11 +45,12 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
     console.log(`${"═".repeat(60)}`);
 
     try {
-      // Step 1: 创建新邮箱
+      // Step 1: 创建新邮箱（用 coroabet，每次都生成全新地址，不会重复）
       console.log(`[恢复] 创建新邮箱...`);
       let newEmail: string;
+      const coroabet = createCoroabetProvider();
       try {
-        newEmail = await getEmailAddress();
+        newEmail = await coroabet.getEmailAddress();
       } catch (error) {
         const errMsg = (error as Error).message;
         console.log(`[恢复] ❌ 邮箱创建失败: ${errMsg}`);
@@ -74,7 +75,7 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
         bindEmail: newEmail,
         fetchAddEmailOtp: async () => {
           console.log(`[恢复] 等待邮箱验证码 for ${newEmail}...`);
-          return await getEmailVerificationCode(newEmail, { minTimestampMs: Date.now() });
+          return await coroabet.getEmailVerificationCode(newEmail, { minTimestampMs: Date.now() });
         },
       });
 
