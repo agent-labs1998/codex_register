@@ -96,17 +96,21 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
         console.log(`[恢复] ✓ CPA 入库响应成功`);
 
         // Step 5: 拉取 auth 文件获取 access_token
-        // CPA 用 ID token 里的旧邮箱命名文件，所以用旧邮箱搜索
+        // CPA 可能用旧邮箱或新邮箱命名文件，两个都搜索
         console.log(`[恢复] 拉取 auth 文件...`);
         const { listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
+        const newEmailLc = newEmail.toLowerCase();
         const oldEmailLc = orphan.email.toLowerCase();
-        const oldCandidates = [`codex-${oldEmailLc}.json`, `codex-${oldEmailLc}-plus.json`];
+        const candidates = [
+          `codex-${newEmailLc}.json`, `codex-${newEmailLc}-plus.json`,
+          `codex-${oldEmailLc}.json`, `codex-${oldEmailLc}-plus.json`,
+        ].filter((v, i, a) => a.indexOf(v) === i); // 去重
 
         let accessToken = "";
         let matchedFileName = "";
         for (let attempt = 1; attempt <= 12; attempt++) {
           const files = await listAuthFiles(cpaBase, cpaKey);
-          const match = files.find((f: any) => oldCandidates.includes(String(f.name || "").toLowerCase()));
+          const match = files.find((f: any) => candidates.includes(String(f.name || "").toLowerCase()));
           if (match) {
             console.log(`[恢复] ✓ 匹配到 auth 文件: ${match.name}`);
             const auth = await downloadAuthFile(cpaBase, cpaKey, match.name);
