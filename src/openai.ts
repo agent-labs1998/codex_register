@@ -1321,11 +1321,15 @@ export class OpenAIClient {
     }
 
     private async resolveEmailOtpCode(): Promise<string> {
+        const targetEmail = this.bindEmail || this.email;
+        if (this.fetchAddEmailOtp) {
+            console.log(`autoEmailOtp: using fetchAddEmailOtp callback targetEmail=${targetEmail}`);
+            return this.fetchAddEmailOtp();
+        }
         if (this.manualMode) {
-            console.log(`manualEmailOtp: targetEmail=${this.bindEmail || this.email}`);
+            console.log(`manualEmailOtp: targetEmail=${targetEmail}`);
             return this.promptEmailOtp();
         }
-        const targetEmail = this.bindEmail || this.email;
         console.log(`autoEmailOtp: provider=${MAILBOX_CONFIG.provider} targetEmail=${targetEmail}`);
         return getEmailVerificationCode(targetEmail);
     }
