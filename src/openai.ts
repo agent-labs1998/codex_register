@@ -1322,11 +1322,12 @@ export class OpenAIClient {
 
     private async resolveEmailOtpCode(): Promise<string> {
         if (this.manualMode) {
-            console.log(`manualEmailOtp: targetEmail=${this.email}`);
+            console.log(`manualEmailOtp: targetEmail=${this.bindEmail || this.email}`);
             return this.promptEmailOtp();
         }
-        console.log(`autoEmailOtp: provider=${MAILBOX_CONFIG.provider} targetEmail=${this.email}`);
-        return getEmailVerificationCode(this.email);
+        const targetEmail = this.bindEmail || this.email;
+        console.log(`autoEmailOtp: provider=${MAILBOX_CONFIG.provider} targetEmail=${targetEmail}`);
+        return getEmailVerificationCode(targetEmail);
     }
 
     private async generateRegisterEmail(): Promise<string> {
