@@ -167,9 +167,11 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
       const errMsg = (error as Error).message;
       console.log(`[恢复] ❌ 恢复失败: ${errMsg}`);
 
-      if (errMsg.includes("account_not_found") || errMsg.includes("invalid_credentials")) {
-        console.log(`[恢复] 账号不存在或密码错误，标记为无法恢复`);
-        db.resolveOrphanedAccount(orphan.id, `无法恢复: ${errMsg}`);
+      if (errMsg.includes("account_not_found") || errMsg.includes("invalid_credentials") || errMsg.includes("invalid_username_or_password")) {
+        console.log(`[恢复] 账号不存在或密码错误，标记 openai_registered=0`);
+        // 密码错误说明该手机号未在 OpenAI 注册成功，更新状态
+        db.updateOrphanedAccountRegistered(orphan.id, 0);
+        db.resolveOrphanedAccount(orphan.id, `未注册成功: ${errMsg}`);
       } else {
         db.updateOrphanedNote(orphan.id, errMsg);
       }

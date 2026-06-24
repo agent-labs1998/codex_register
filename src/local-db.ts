@@ -88,6 +88,7 @@ interface OrphanedAccount {
   error_message: string | null;
   sms_code: string | null;
   openai_registered: number;  // 1=OpenAI 已注册成功，0=未创建
+  recovered_email: string | null;  // 恢复后绑定的新邮箱
   resolved: number;  // 0=未解决，1=已手动解决
   resolved_at: string | null;
   resolved_note: string | null;
@@ -534,6 +535,11 @@ export class LocalDB {
       const stmt = this.db.prepare("UPDATE orphaned_accounts SET resolved = 1, resolved_at = datetime('now'), resolved_note = ? WHERE id = ?");
       stmt.run(note, id);
     }
+  }
+
+  updateOrphanedAccountRegistered(id: number, value: number): void {
+    const stmt = this.db.prepare("UPDATE orphaned_accounts SET openai_registered = ? WHERE id = ?");
+    stmt.run(value, id);
   }
 
   updateOrphanedNote(id: number, note: string): void {
