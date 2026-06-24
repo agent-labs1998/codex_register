@@ -93,12 +93,51 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
       const authResult = await submitOAuthCallback(cpaBase, cpaKey, callbackURL);
 
       if (authResult.status === 200) {
-        console.log(`[恢复] ✓ 入库成功`);
+        console.log(`[恢复] ✓ CPA 入库响应成功`);
+
+        // Step 5: 拉取 auth 文件获取 access_token
+        console.log(`[恢复] 拉取 auth 文件...`);
+        const { listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
+        const emailLc = newEmail.toLowerCase();
+        const candidates = [`codex-${emailLc}.json`, `codex-${emailLc}-plus.json`];
+
+        let accessToken = "";
+        for (let attempt = 1; attempt <= 12; attempt++) {
+          const files = await listAuthFiles(cpaBase, cpaKey);
+          const match = files.find((f: any) => candidates.includes(String(f.name || "").toLowerCase()));
+          if (match) {
+            console.log(`[恢复] ✓ 匹配到 auth 文件: ${match.name}`);
+            const auth = await downloadAuthFile(cpaBase, cpaKey, match.name);
+            accessToken = String(auth?.access_token || "").trim();
+            break;
+          }
+          if (attempt < 12) {
+            await new Promise(r => setTimeout(r, 3000));
+          }
+        }
+
+        if (accessToken) {
+          // Step 6: 写入 accounts 表
+          db.saveAccount({
+            phone: orphan.phone,
+            email: newEmail,
+            password: orphan.password,
+            access_token: accessToken,
+            token_expires_at: null,
+            cpa_auth_file: "",
+            cpa_base_url: cpaBase,
+            status: "active",
+          });
+          console.log(`[恢复] ✓ 已写入 accounts 表`);
+        } else {
+          console.log(`[恢复] ⚠ 未获取到 access_token，但 CPA 入库成功`);
+        }
+
         console.log(`${"═".repeat(60)}`);
         console.log(`✅ 恢复成功 | ${orphan.phone} | ${newEmail}`);
         console.log(`${"═".repeat(60)}\n`);
 
-        db.resolveOrphanedAccount(orphan.id, "自动恢复成功");
+        db.resolveOrphanedAccount(orphan.id, "自动恢复成功", newEmail);
         success++;
       } else {
         const errMsg = `CPA 入库失败: status=${authResult.status}, body=${authResult.body}`;

@@ -205,6 +205,7 @@ export class LocalDB {
         error_message TEXT,
         sms_code TEXT,                     -- 收到的短信验证码（如果有的话）
         openai_registered INTEGER DEFAULT 1,  -- OpenAI 是否已注册成功
+        recovered_email TEXT,              -- 恢复后绑定的新邮箱
         resolved INTEGER DEFAULT 0,        -- 是否已手动解决
         resolved_at TEXT,
         resolved_note TEXT,
@@ -213,6 +214,13 @@ export class LocalDB {
       CREATE INDEX IF NOT EXISTS idx_orphaned_resolved ON orphaned_accounts(resolved);
       CREATE INDEX IF NOT EXISTS idx_orphaned_phone ON orphaned_accounts(phone);
     `);
+
+    // 兼容旧数据库：给 orphaned_accounts 加 recovered_email 列
+    try {
+      this.db.prepare("ALTER TABLE orphaned_accounts ADD COLUMN recovered_email TEXT").run();
+    } catch {
+      // 列已存在，忽略
+    }
   }
 
   createWorkflowRun(workflow: string, options?: object): number {
@@ -518,9 +526,14 @@ export class LocalDB {
     return stmt.all() as OrphanedAccount[];
   }
 
-  resolveOrphanedAccount(id: number, note: string): void {
-    const stmt = this.db.prepare("UPDATE orphaned_accounts SET resolved = 1, resolved_at = datetime('now'), resolved_note = ? WHERE id = ?");
-    stmt.run(note, id);
+  resolveOrphanedAccount(id: number, note: string, recoveredEmail?: string): void {
+    if (recoveredEmail) {
+      const stmt = this.db.prepare("UPDATE orphaned_accounts SET resolved = 1, resolved_at = datetime('now'), resolved_note = ?, recovered_email = ? WHERE id = ?");
+      stmt.run(note, recoveredEmail, id);
+    } else {
+      const stmt = this.db.prepare("UPDATE orphaned_accounts SET resolved = 1, resolved_at = datetime('now'), resolved_note = ? WHERE id = ?");
+      stmt.run(note, id);
+    }
   }
 
   updateOrphanedNote(id: number, note: string): void {
