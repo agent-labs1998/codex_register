@@ -365,6 +365,12 @@ cat test_tokens.txt
 # 问题 3：CPA 失败
 # 症状：报错 CPA auth-url failed
 # 解决：检查 config.json 中的 cliproxy 配置
+
+# 问题 4：查询 HeroSMS 历史记录
+# 必须传 start/end（Unix 时间戳）和 size 参数，否则数据不全
+START=$(date -d "2026-06-26 00:00:00" +%s)
+END=$(date -d "2026-06-26 23:59:59" +%s)
+curl -s "https://hero-sms.com/stubs/handler_api.php?api_key=YOUR_KEY&action=getHistory&start=$START&end=$END&size=100"
 ```
 
 详细测试指南见：`DOCX/testing-guide.md`
