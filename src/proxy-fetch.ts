@@ -43,6 +43,7 @@ export async function proxyFetch(url: string, init?: RequestInit): Promise<Respo
   return undiciFetch(url, {
     ...init,
     dispatcher,
+    signal: AbortSignal.timeout(30000),
   } as any) as unknown as Promise<Response>;
 }
 
