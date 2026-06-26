@@ -65,13 +65,29 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
       }
       console.log(`[恢复] 孤儿 #${seq} ${orphan.phone} → 新邮箱 ${newEmail}`);
 
-      // Step 2: 获取 CPA 授权 URL
-      console.log(`[恢复] 获取 CPA 授权 URL...`);
-      const { requestCodexAuthUrl, submitOAuthCallback } = await import("./cpa-codex.js");
-      const { authorizeUrl } = await requestCodexAuthUrl(cpaBase, cpaKey);
-      console.log(`[恢复] ✓ CPA 授权 URL 已获取`);
+      // Step 2: 获取授权 URL（根据 tokenBackend 选择 CPA 或 sub2api）
+      const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
+      let authorizeUrl: string;
+      let sub2apiSessionId: string | undefined;
+      let sub2apiToken: string | undefined;
 
-      // Step 3: 用 CPA 授权 URL 登录（走手机号+密码 → 绑新邮箱 → 收验证码 → 拿 callback）
+      if (useSub2api) {
+        console.log(`[恢复] 获取 sub2api 授权 URL...`);
+        const { getSub2apiToken, generateAuthUrl } = await import("./sub2api.js");
+        sub2apiToken = await getSub2apiToken(appConfig.sub2api.baseUrl, appConfig.sub2api.email, appConfig.sub2api.password);
+        const result = await generateAuthUrl(appConfig.sub2api.baseUrl, sub2apiToken);
+        authorizeUrl = result.authUrl;
+        sub2apiSessionId = result.sessionId;
+        console.log(`[恢复] ✓ sub2api 授权 URL 已获取`);
+      } else {
+        console.log(`[恢复] 获取 CPA 授权 URL...`);
+        const { requestCodexAuthUrl } = await import("./cpa-codex.js");
+        const { authorizeUrl: url } = await requestCodexAuthUrl(cpaBase, cpaKey);
+        authorizeUrl = url;
+        console.log(`[恢复] ✓ CPA 授权 URL 已获取`);
+      }
+
+      // Step 3: 登录 OpenAI 并绑定邮箱（通用，不区分后端）
       console.log(`[恢复] 登录 OpenAI 并绑定邮箱...`);
       const client = new OpenAIClient({
         email: orphan.phone,
@@ -88,25 +104,47 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
       const callbackURL = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
       console.log(`[恢复] ✓ 拿到 callback URL`);
 
-      // Step 4: CPA 入库
-      console.log(`[恢复] CPA 入库...`);
-      const authResult = await submitOAuthCallback(cpaBase, cpaKey, callbackURL);
+      // Step 4: 入库（根据 tokenBackend 选择 CPA 或 sub2api）
+      let accessToken = "";
 
-      if (authResult.status === 200) {
+      if (useSub2api) {
+        // ─── sub2api 路径 ───
+        console.log(`[恢复] sub2api 入库...`);
+        const { exchangeCode, createFromOAuth } = await import("./sub2api.js");
+
+        const url = new URL(callbackURL);
+        const code = url.searchParams.get("code") || "";
+        const state = url.searchParams.get("state") || "";
+        if (!code) throw new Error(`callback URL 中没有 code: ${callbackURL.slice(0, 200)}`);
+
+        const exchangeResult = await exchangeCode(appConfig.sub2api.baseUrl, sub2apiToken!, sub2apiSessionId!, code, state);
+        const createResult = await createFromOAuth(appConfig.sub2api.baseUrl, sub2apiToken!, exchangeResult.refreshToken, appConfig.sub2api.groupIds);
+
+        if (!createResult.success) {
+          throw new Error(`sub2api 入库失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);
+        }
+        accessToken = exchangeResult.accessToken || "";
+        console.log(`[恢复] ✓ sub2api 入库成功`);
+
+      } else {
+        // ─── CPA 路径 ───
+        console.log(`[恢复] CPA 入库...`);
+        const { submitOAuthCallback, listAuthFiles, downloadAuthFile, deleteAuthFile } = await import("./cpa-codex.js");
+        const authResult = await submitOAuthCallback(cpaBase, cpaKey, callbackURL);
+
+        if (authResult.status !== 200) {
+          throw new Error(`CPA 入库失败: status=${authResult.status} body=${authResult.body.slice(0, 300)}`);
+        }
         console.log(`[恢复] ✓ CPA 入库响应成功`);
 
-        // Step 5: 拉取 auth 文件获取 access_token
-        // CPA 可能用旧邮箱或新邮箱命名文件，两个都搜索
-        console.log(`[恢复] 拉取 auth 文件...`);
-        const { listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
+        // 拉取 auth 文件获取 access_token
         const newEmailLc = newEmail.toLowerCase();
         const oldEmailLc = orphan.email.toLowerCase();
         const candidates = [
           `codex-${newEmailLc}.json`, `codex-${newEmailLc}-plus.json`,
           `codex-${oldEmailLc}.json`, `codex-${oldEmailLc}-plus.json`,
-        ].filter((v, i, a) => a.indexOf(v) === i); // 去重
+        ].filter((v, i, a) => a.indexOf(v) === i);
 
-        let accessToken = "";
         let matchedFileName = "";
         for (let attempt = 1; attempt <= 12; attempt++) {
           const files = await listAuthFiles(cpaBase, cpaKey);
@@ -118,52 +156,44 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
             matchedFileName = match.name;
             break;
           }
-          if (attempt < 12) {
-            await new Promise(r => setTimeout(r, 3000));
-          }
+          if (attempt < 12) await new Promise(r => setTimeout(r, 3000));
         }
 
-        // Step 6: 删除 CPA 旧邮箱的 auth 文件（避免后续混淆）
+        // 删除 CPA 旧记录
         if (matchedFileName) {
           try {
-            const { deleteAuthFile } = await import("./cpa-codex.js");
             await deleteAuthFile(cpaBase, cpaKey, matchedFileName);
             console.log(`[恢复] ✓ 已删除 CPA 旧记录: ${matchedFileName}`);
           } catch (e) {
             console.log(`[恢复] ⚠ 删除旧 auth 文件失败: ${(e as Error).message}`);
           }
         }
-
-        if (accessToken) {
-          // Step 7: 用新邮箱写入 accounts 表
-          db.saveAccount({
-            phone: orphan.phone,
-            email: newEmail,
-            password: orphan.password,
-            access_token: accessToken,
-            token_expires_at: null,
-            cpa_auth_file: "",
-            cpa_base_url: cpaBase,
-            token_backend: appConfig.tokenBackend || "cpa",
-            status: "active",
-          });
-          console.log(`[恢复] ✓ 已写入 accounts 表（邮箱: ${newEmail}）`);
-        } else {
-          console.log(`[恢复] ⚠ 未获取到 access_token，但 CPA 入库成功`);
-        }
-
-        console.log(`${"═".repeat(60)}`);
-        console.log(`✅ 恢复成功 | ${orphan.phone} | ${newEmail}`);
-        console.log(`${"═".repeat(60)}\n`);
-
-        db.resolveOrphanedAccount(orphan.id, "自动恢复成功", newEmail);
-        success++;
-      } else {
-        const errMsg = `CPA 入库失败: status=${authResult.status}, body=${authResult.body}`;
-        console.log(`[恢复] ❌ ${errMsg}`);
-        db.updateOrphanedNote(orphan.id, errMsg);
-        failed++;
       }
+
+      // Step 5: 写入 accounts 表
+      if (accessToken) {
+        db.saveAccount({
+          phone: orphan.phone,
+          email: newEmail,
+          password: orphan.password,
+          access_token: accessToken,
+          token_expires_at: null,
+          cpa_auth_file: "",
+          cpa_base_url: useSub2api ? appConfig.sub2api.baseUrl : cpaBase,
+          token_backend: useSub2api ? "sub2api" : "cpa",
+          status: "active",
+        });
+        console.log(`[恢复] ✓ 已写入 accounts 表（邮箱: ${newEmail}）`);
+      } else {
+        console.log(`[恢复] ⚠ 未获取到 access_token，但入库成功`);
+      }
+
+      console.log(`${"═".repeat(60)}`);
+      console.log(`✅ 恢复成功 | ${orphan.phone} | ${newEmail} | ${useSub2api ? "sub2api" : "CPA"}`);
+      console.log(`${"═".repeat(60)}\n`);
+
+      db.resolveOrphanedAccount(orphan.id, "自动恢复成功", newEmail);
+      success++;
     } catch (error) {
       const errMsg = (error as Error).message;
       console.log(`[恢复] ❌ 恢复失败: ${errMsg}`);
