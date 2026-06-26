@@ -6,13 +6,13 @@ function normalizeBaseUrl(value: string): string {
 }
 
 function getCLIProxyAPIConfig(): { baseUrl: string; managementKey: string } {
-    const baseUrl = normalizeBaseUrl(appConfig.cliproxyApiBaseUrl);
-    const managementKey = String(appConfig.cliproxyApiManagementKey ?? "").trim();
+    const baseUrl = normalizeBaseUrl(appConfig.cpa.baseUrl);
+    const managementKey = String(appConfig.cpa.managementKey ?? "").trim();
     if (!baseUrl) {
-        throw new Error("cliproxyApiBaseUrl 未配置");
+        throw new Error("cpa.baseUrl 未配置");
     }
     if (!managementKey) {
-        throw new Error("cliproxyApiManagementKey 未配置");
+        throw new Error("cpa.managementKey 未配置");
     }
     return {
         baseUrl,
@@ -37,7 +37,7 @@ export interface CLIProxyAuthFileItem {
 }
 
 export function shouldAutoUploadAuthToCLIProxyAPI(): boolean {
-    return appConfig.cliproxyApiAutoUploadAuth;
+    return appConfig.cpa.autoUploadAuth;
 }
 
 export async function listAuthFilesFromCLIProxyAPI(): Promise<CLIProxyAuthFileItem[]> {
@@ -153,7 +153,7 @@ export async function uploadAuthFileToCLIProxyAPI(
     fileName: string,
     record: SavedAuthRecord,
 ): Promise<void> {
-    if (!appConfig.cliproxyApiAutoUploadAuth) {
+    if (!appConfig.cpa.autoUploadAuth) {
         return;
     }
     await saveAuthFileJsonObjectToCLIProxyAPI(fileName, record as unknown as Record<string, unknown>);
