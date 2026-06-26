@@ -79,8 +79,8 @@ async function cancelActivation(activationId: string): Promise<void> {
 export async function runCpaRegistration(task: RegistrationTask): Promise<CodexCpaResult> {
   const { workerId, attemptId, phoneLease, phoneNumber, activationId, deadlines, onStatusChange, db } = task;
   const password = appConfig.defaultPassword;
-  const cpaBase = appConfig.cliproxyApiBaseUrl || "";
-  const cpaKey = appConfig.cliproxyApiManagementKey || "";
+  const cpaBase = appConfig.cpa.baseUrl || "";
+  const cpaKey = appConfig.cpa.managementKey || "";
 
   if (!cpaKey) {
     return {
@@ -209,7 +209,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
 
   // 根据 tokenBackend 选择后端
-  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2apiBaseUrl && appConfig.sub2apiEmail;
+  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
 
   let authorizeUrl: string;
   let sub2apiSessionId: string | undefined;
@@ -220,8 +220,8 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
 
     try {
-      sub2apiToken = await sub2apiLogin(appConfig.sub2apiBaseUrl, appConfig.sub2apiEmail, appConfig.sub2apiPassword);
-      const result = await sub2apiGenerateAuthUrl(appConfig.sub2apiBaseUrl, sub2apiToken);
+      sub2apiToken = await sub2apiLogin(appConfig.sub2api.baseUrl, appConfig.sub2api.email, appConfig.sub2api.password);
+      const result = await sub2apiGenerateAuthUrl(appConfig.sub2api.baseUrl, sub2apiToken);
       authorizeUrl = result.authUrl;
       sub2apiSessionId = result.sessionId;
     } catch (error) {

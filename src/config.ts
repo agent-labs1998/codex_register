@@ -24,9 +24,6 @@ interface AppConfigFile {
     heroSMSPriceTiers?: unknown;
     heroSMSPollAttempts?: unknown;
     heroSMSPollIntervalMs?: unknown;
-    cliproxyApiAutoUploadAuth?: unknown;
-    cliproxyApiBaseUrl?: unknown;
-    cliproxyApiManagementKey?: unknown;
     coroabetWorkerDomain?: unknown;
     coroabetEmailDomain?: unknown;
     coroabetAdminPassword?: unknown;
@@ -40,10 +37,17 @@ interface AppConfigFile {
     profileLocaleByCountry?: unknown;
     logLevel?: unknown;
     tokenBackend?: unknown;
-    sub2apiBaseUrl?: unknown;
-    sub2apiEmail?: unknown;
-    sub2apiPassword?: unknown;
-    sub2apiGroupIds?: unknown;
+    cpa?: {
+        baseUrl?: unknown;
+        managementKey?: unknown;
+        autoUploadAuth?: unknown;
+    };
+    sub2api?: {
+        baseUrl?: unknown;
+        email?: unknown;
+        password?: unknown;
+        groupIds?: unknown;
+    };
 }
 
 export interface AppConfig {
@@ -84,10 +88,17 @@ export interface AppConfig {
     profileLocaleByCountry: Record<string, string>;
     logLevel: "info" | "debug";
     tokenBackend: "cpa" | "sub2api";
-    sub2apiBaseUrl: string;
-    sub2apiEmail: string;
-    sub2apiPassword: string;
-    sub2apiGroupIds: number[];
+    cpa: {
+        baseUrl: string;
+        managementKey: string;
+        autoUploadAuth: boolean;
+    };
+    sub2api: {
+        baseUrl: string;
+        email: string;
+        password: string;
+        groupIds: number[];
+    };
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -135,10 +146,17 @@ const DEFAULT_CONFIG: AppConfig = {
     },
     logLevel: "info",
     tokenBackend: "cpa",
-    sub2apiBaseUrl: "",
-    sub2apiEmail: "",
-    sub2apiPassword: "",
-    sub2apiGroupIds: [14],
+    cpa: {
+        baseUrl: "",
+        managementKey: "",
+        autoUploadAuth: false,
+    },
+    sub2api: {
+        baseUrl: "",
+        email: "",
+        password: "",
+        groupIds: [14],
+    },
 };
 
 function normalizeNumber(value: unknown, fallback: number): number {
@@ -306,17 +324,17 @@ function loadConfig(): AppConfig {
             ? parsed.heroSMSProxy
             : DEFAULT_CONFIG.heroSMSProxy,
         cliproxyApiAutoUploadAuth: normalizeBoolean(
-            parsed.cliproxyApiAutoUploadAuth,
-            DEFAULT_CONFIG.cliproxyApiAutoUploadAuth,
+            parsed.cpa?.autoUploadAuth ?? parsed.cliproxyApiAutoUploadAuth,
+            DEFAULT_CONFIG.cpa.autoUploadAuth,
         ),
-        cliproxyApiBaseUrl:
-            typeof parsed.cliproxyApiBaseUrl === "string" && parsed.cliproxyApiBaseUrl.trim()
-                ? parsed.cliproxyApiBaseUrl.trim()
-                : DEFAULT_CONFIG.cliproxyApiBaseUrl,
-        cliproxyApiManagementKey:
-            typeof parsed.cliproxyApiManagementKey === "string"
-                ? parsed.cliproxyApiManagementKey.trim()
-                : DEFAULT_CONFIG.cliproxyApiManagementKey,
+        cliproxyApiBaseUrl: normalizeString(
+            parsed.cpa?.baseUrl ?? parsed.cliproxyApiBaseUrl,
+            DEFAULT_CONFIG.cpa.baseUrl,
+        ),
+        cliproxyApiManagementKey: normalizeString(
+            parsed.cpa?.managementKey ?? parsed.cliproxyApiManagementKey,
+            DEFAULT_CONFIG.cpa.managementKey,
+        ),
         coroabetWorkerDomain:
             typeof parsed.coroabetWorkerDomain === "string" && parsed.coroabetWorkerDomain.trim()
                 ? parsed.coroabetWorkerDomain.trim()
@@ -342,9 +360,17 @@ function loadConfig(): AppConfig {
         profileLocaleByCountry: normalizeStringRecord(parsed.profileLocaleByCountry, DEFAULT_CONFIG.profileLocaleByCountry),
         logLevel: parsed.logLevel === "debug" ? "debug" : "info",
         tokenBackend: normalizeTokenBackend(parsed.tokenBackend),
-        sub2apiBaseUrl: normalizeString(parsed.sub2apiBaseUrl, DEFAULT_CONFIG.sub2apiBaseUrl),
-        sub2apiToken: normalizeString(parsed.sub2apiToken, DEFAULT_CONFIG.sub2apiToken),
-        sub2apiGroupIds: normalizeNumberArray(parsed.sub2apiGroupIds, DEFAULT_CONFIG.sub2apiGroupIds),
+        cpa: {
+            baseUrl: normalizeString(parsed.cpa?.baseUrl ?? parsed.cliproxyApiBaseUrl, DEFAULT_CONFIG.cpa.baseUrl),
+            managementKey: normalizeString(parsed.cpa?.managementKey ?? parsed.cliproxyApiManagementKey, DEFAULT_CONFIG.cpa.managementKey),
+            autoUploadAuth: normalizeBoolean(parsed.cpa?.autoUploadAuth ?? parsed.cliproxyApiAutoUploadAuth, DEFAULT_CONFIG.cpa.autoUploadAuth),
+        },
+        sub2api: {
+            baseUrl: normalizeString(parsed.sub2api?.baseUrl ?? parsed.sub2apiBaseUrl, DEFAULT_CONFIG.sub2api.baseUrl),
+            email: normalizeString(parsed.sub2api?.email ?? parsed.sub2apiEmail, DEFAULT_CONFIG.sub2api.email),
+            password: normalizeString(parsed.sub2api?.password ?? parsed.sub2apiPassword, DEFAULT_CONFIG.sub2api.password),
+            groupIds: normalizeNumberArray(parsed.sub2api?.groupIds ?? parsed.sub2apiGroupIds, DEFAULT_CONFIG.sub2api.groupIds),
+        },
     };
 }
 
