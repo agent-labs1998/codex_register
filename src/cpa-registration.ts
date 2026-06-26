@@ -356,7 +356,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
       // 步骤 8: 用 code 换 token
       const exchangeResult = await sub2apiExchangeCode(
-        appConfig.sub2apiBaseUrl,
+        appConfig.sub2api.baseUrl,
         sub2apiToken!,
         sub2apiSessionId!,
         code,
@@ -365,10 +365,10 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
       // 步骤 9: 创建账户入库
       const createResult = await sub2apiCreateFromOAuth(
-        appConfig.sub2apiBaseUrl,
+        appConfig.sub2api.baseUrl,
         sub2apiToken!,
         exchangeResult.refreshToken,
-        appConfig.sub2apiGroupIds,
+        appConfig.sub2api.groupIds,
       );
 
       if (!createResult.success) {
