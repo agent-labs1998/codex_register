@@ -255,11 +255,32 @@ async function runOnce(db?: LocalDB): Promise<void> {
             );
         }
 
-        const {requestCodexAuthUrl, submitOAuthCallback, listAuthFiles, downloadAuthFile} = await import("./cpa-codex.js");
+        // 根据 tokenBackend 选择后端
+        const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2apiBaseUrl && appConfig.sub2apiEmail;
 
-        console.log(`[codex-cpa] [1] CPA codex-auth-url`);
-        const {authorizeUrl} = await requestCodexAuthUrl(cpaBase, cpaKey);
-        console.log(`[codex-cpa]     authorize: ${authorizeUrl.slice(0, 120)}...`);
+        let authorizeUrl: string;
+        let sub2apiSessionId: string | undefined;
+        let sub2apiToken: string | undefined;
+
+        if (useSub2api) {
+            // ─── sub2api 路径 ───
+            const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
+
+            sub2apiToken = await sub2apiLogin(appConfig.sub2apiBaseUrl, appConfig.sub2apiEmail, appConfig.sub2apiPassword);
+            console.log(`[codex-cpa] [1] sub2api generate-auth-url`);
+            const result = await sub2apiGenerateAuthUrl(appConfig.sub2apiBaseUrl, sub2apiToken);
+            authorizeUrl = result.authUrl;
+            sub2apiSessionId = result.sessionId;
+            console.log(`[codex-cpa]     authorize: ${authorizeUrl.slice(0, 120)}...`);
+        } else {
+            // ─── CPA 路径（原有逻辑）───
+            const {requestCodexAuthUrl} = await import("./cpa-codex.js");
+
+            console.log(`[codex-cpa] [1] CPA codex-auth-url`);
+            const result = await requestCodexAuthUrl(cpaBase, cpaKey);
+            authorizeUrl = result.authorizeUrl;
+            console.log(`[codex-cpa]     authorize: ${authorizeUrl.slice(0, 120)}...`);
+        }
 
         const client = new OpenAIClient({
             email: phone,
@@ -293,70 +314,113 @@ async function runOnce(db?: LocalDB): Promise<void> {
         }
         console.log(`[codex-cpa]     callback: ${callbackUrl.slice(0, 120)}...`);
 
-        console.log(`[codex-cpa] [3] 提交 callback 给 CPA`);
-        const {status, body} = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl);
-        console.log(`[codex-cpa]     CPA status=${status}`);
-        console.log(`[codex-cpa]     CPA body: ${body.slice(0, 500)}`);
-        if (status >= 300) {
-            throw new Error(`CPA oauth-callback 失败 status=${status}`);
-        }
+        if (useSub2api) {
+            // ─── sub2api 路径：exchangeCode + createFromOAuth ───
+            const { exchangeCode: sub2apiExchangeCode, createFromOAuth: sub2apiCreateFromOAuth } = await import("./sub2api.js");
 
-        // 如果之前还没拿到 ChatGPT accessToken，从 CPA 拉刚入库的 codex auth.json 取 access_token
-        if (!chatgptAccessToken) {
-            try {
-                console.log(`[codex-cpa] 从 CPA 拉刚入库的 codex auth 文件...`);
-                if (!bindEmail) {
-                    throw new Error("没有 bindEmail，无法精确定位 codex auth 文件（拒绝并发场景下的兜底匹配）");
-                }
-                const emailLc = bindEmail.toLowerCase();
-                // CPA 实际命名有两种：codex-<email>.json 与 codex-<email>-plus.json（plus 套餐）
-                // 两者都精确匹配本 email，绝不退化到"最新文件"（避免并发拿到别 worker 的 token）
-                const candidates = [
-                    `codex-${emailLc}.json`,
-                    `codex-${emailLc}-plus.json`,
-                ];
-                const matchFile = (files: any[]) => {
-                    // 优先无后缀，其次 -plus
-                    for (const want of candidates) {
-                        const hit = files.find(f => String(f.name || "").toLowerCase() === want);
-                        if (hit) return hit;
+            console.log(`[codex-cpa] [3] sub2api exchange-code + create-from-oauth`);
+
+            // 从 callback URL 提取 code 和 state
+            const callbackUrlObj = new URL(callbackUrl);
+            const code = callbackUrlObj.searchParams.get("code") || "";
+            const state = callbackUrlObj.searchParams.get("state") || "";
+
+            if (!code) {
+                throw new Error(`callback URL 中没有 code 参数: ${callbackUrl.slice(0, 200)}`);
+            }
+
+            // 步骤 8: 用 code 换 token
+            const exchangeResult = await sub2apiExchangeCode(
+                appConfig.sub2apiBaseUrl,
+                sub2apiToken!,
+                sub2apiSessionId!,
+                code,
+                state,
+            );
+
+            // 步骤 9: 创建账户入库
+            const createResult = await sub2apiCreateFromOAuth(
+                appConfig.sub2apiBaseUrl,
+                sub2apiToken!,
+                exchangeResult.refreshToken,
+                appConfig.sub2apiGroupIds,
+            );
+
+            if (!createResult.success) {
+                throw new Error(`sub2api create-from-oauth 失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);
+            }
+
+            chatgptAccessToken = exchangeResult.accessToken;
+            console.log(`[codex-cpa] [✅️] 从 sub2api 拿到 access_token (${chatgptAccessToken.length} 字符, 账户ID=${createResult.accountId || "unknown"})`);
+        } else {
+            // ─── CPA 路径（原有逻辑）───
+            const {submitOAuthCallback, listAuthFiles, downloadAuthFile} = await import("./cpa-codex.js");
+
+            console.log(`[codex-cpa] [3] 提交 callback 给 CPA`);
+            const {status, body} = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl);
+            console.log(`[codex-cpa]     CPA status=${status}`);
+            console.log(`[codex-cpa]     CPA body: ${body.slice(0, 500)}`);
+            if (status >= 300) {
+                throw new Error(`CPA oauth-callback 失败 status=${status}`);
+            }
+
+            // 如果之前还没拿到 ChatGPT accessToken，从 CPA 拉刚入库的 codex auth.json 取 access_token
+            if (!chatgptAccessToken) {
+                try {
+                    console.log(`[codex-cpa] 从 CPA 拉刚入库的 codex auth 文件...`);
+                    if (!bindEmail) {
+                        throw new Error("没有 bindEmail，无法精确定位 codex auth 文件（拒绝并发场景下的兜底匹配）");
                     }
-                    return null;
-                };
-                // CPA 落库可能有延迟（callback 返回 ok 后服务端异步写文件），放宽到 ~36s
-                const POLL_MAX_ATTEMPTS = 12;
-                const POLL_INTERVAL_MS = 3000;
-                let latest: any = null;
-                let lastFileCount = -1;
-                for (let attempt = 1; attempt <= POLL_MAX_ATTEMPTS; attempt += 1) {
-                    const files = await listAuthFiles(cpaBase, cpaKey);
-                    lastFileCount = files.length;
-                    latest = matchFile(files);
-                    if (latest) {
-                        console.log(`[codex-cpa]     精确匹配文件: ${latest.name} (attempt=${attempt}, 库内共 ${files.length} 文件)`);
-                        break;
+                    const emailLc = bindEmail.toLowerCase();
+                    // CPA 实际命名有两种：codex-<email>.json 与 codex-<email>-plus.json（plus 套餐）
+                    // 两者都精确匹配本 email，绝不退化到"最新文件"（避免并发拿到别 worker 的 token）
+                    const candidates = [
+                        `codex-${emailLc}.json`,
+                        `codex-${emailLc}-plus.json`,
+                    ];
+                    const matchFile = (files: any[]) => {
+                        // 优先无后缀，其次 -plus
+                        for (const want of candidates) {
+                            const hit = files.find(f => String(f.name || "").toLowerCase() === want);
+                            if (hit) return hit;
+                        }
+                        return null;
+                    };
+                    // CPA 落库可能有延迟（callback 返回 ok 后服务端异步写文件），放宽到 ~36s
+                    const POLL_MAX_ATTEMPTS = 12;
+                    const POLL_INTERVAL_MS = 3000;
+                    let latest: any = null;
+                    let lastFileCount = -1;
+                    for (let attempt = 1; attempt <= POLL_MAX_ATTEMPTS; attempt += 1) {
+                        const files = await listAuthFiles(cpaBase, cpaKey);
+                        lastFileCount = files.length;
+                        latest = matchFile(files);
+                        if (latest) {
+                            console.log(`[codex-cpa]     精确匹配文件: ${latest.name} (attempt=${attempt}, 库内共 ${files.length} 文件)`);
+                            break;
+                        }
+                        if (attempt < POLL_MAX_ATTEMPTS) {
+                            console.log(`[codex-cpa]     还没看到 codex-${emailLc}(.json|-plus.json) (attempt=${attempt}/${POLL_MAX_ATTEMPTS}, 库内共 ${files.length} 文件)，${POLL_INTERVAL_MS}ms 后重试`);
+                            await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+                        }
                     }
-                    if (attempt < POLL_MAX_ATTEMPTS) {
-                        console.log(`[codex-cpa]     还没看到 codex-${emailLc}(.json|-plus.json) (attempt=${attempt}/${POLL_MAX_ATTEMPTS}, 库内共 ${files.length} 文件)，${POLL_INTERVAL_MS}ms 后重试`);
-                        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+                    if (!latest) {
+                        throw new Error(
+                            `等了 ${POLL_MAX_ATTEMPTS * POLL_INTERVAL_MS}ms 仍找不到 codex-${emailLc}(.json|-plus.json)`
+                            + `（CPA 库内共 ${lastFileCount} 文件）—— callback 返回 ok 但未落库，疑似 CPA 端入库失败/延迟。`
+                            + `拒绝兜底，避免拿到别 worker 的 token`
+                        );
                     }
+                    const auth = await downloadAuthFile(cpaBase, cpaKey, latest.name);
+                    const tok = String(auth?.access_token || "").trim();
+                    if (!tok) {
+                        throw new Error(`auth 文件里没 access_token: ${JSON.stringify(auth).slice(0, 200)}`);
+                    }
+                    chatgptAccessToken = tok;
+                    console.log(`[codex-cpa] [✅️] 从 CPA 拿到 access_token (${tok.length} 字符, 文件=${latest.name})`);
+                } catch (e) {
+                    console.warn(`[codex-cpa] 从 CPA 取 access_token 失败: ${(e as Error).message}`);
                 }
-                if (!latest) {
-                    throw new Error(
-                        `等了 ${POLL_MAX_ATTEMPTS * POLL_INTERVAL_MS}ms 仍找不到 codex-${emailLc}(.json|-plus.json)`
-                        + `（CPA 库内共 ${lastFileCount} 文件）—— callback 返回 ok 但未落库，疑似 CPA 端入库失败/延迟。`
-                        + `拒绝兜底，避免拿到别 worker 的 token`
-                    );
-                }
-                const auth = await downloadAuthFile(cpaBase, cpaKey, latest.name);
-                const tok = String(auth?.access_token || "").trim();
-                if (!tok) {
-                    throw new Error(`auth 文件里没 access_token: ${JSON.stringify(auth).slice(0, 200)}`);
-                }
-                chatgptAccessToken = tok;
-                console.log(`[codex-cpa] [✅️] 从 CPA 拿到 access_token (${tok.length} 字符, 文件=${latest.name})`);
-            } catch (e) {
-                console.warn(`[codex-cpa] 从 CPA 取 access_token 失败: ${(e as Error).message}`);
             }
         }
 

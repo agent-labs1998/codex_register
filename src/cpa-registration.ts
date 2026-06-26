@@ -190,7 +190,7 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     }
   }
 
-  // Step 3: CPA OAuth
+  // Step 3: OAuth (CPA 或 sub2api)
   reportStatus("cpa_oauth");
 
   // 打印当前使用的 IP（通过代理检测出口 IP）
@@ -208,26 +208,57 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
   console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
 
-  const { requestCodexAuthUrl, submitOAuthCallback, listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
+  // 根据 tokenBackend 选择后端
+  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2apiBaseUrl && appConfig.sub2apiEmail;
 
   let authorizeUrl: string;
-  try {
-    console.log(`[CPA] ① 获取授权 URL`);
-    const result = await requestCodexAuthUrl(cpaBase, cpaKey);
-    authorizeUrl = result.authorizeUrl;
-    console.log(`[CPA] ① ✓ 授权 URL 已获取`);
-  } catch (error) {
-    reportStatus("failed");
-    return {
-      status: "failed",
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: `CPA auth-url failed: ${(error as Error).message}`,
-      activationId,
-      workerId,
-      attemptId,
-    };
+  let sub2apiSessionId: string | undefined;
+  let sub2apiToken: string | undefined;
+
+  if (useSub2api) {
+    // ─── sub2api 路径 ───
+    const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
+
+    try {
+      sub2apiToken = await sub2apiLogin(appConfig.sub2apiBaseUrl, appConfig.sub2apiEmail, appConfig.sub2apiPassword);
+      const result = await sub2apiGenerateAuthUrl(appConfig.sub2apiBaseUrl, sub2apiToken);
+      authorizeUrl = result.authUrl;
+      sub2apiSessionId = result.sessionId;
+    } catch (error) {
+      reportStatus("failed");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `sub2api auth-url failed: ${(error as Error).message}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
+  } else {
+    // ─── CPA 路径（原有逻辑）───
+    const { requestCodexAuthUrl } = await import("./cpa-codex.js");
+
+    try {
+      console.log(`[CPA] ① 获取授权 URL`);
+      const result = await requestCodexAuthUrl(cpaBase, cpaKey);
+      authorizeUrl = result.authorizeUrl;
+      console.log(`[CPA] ① ✓ 授权 URL 已获取`);
+    } catch (error) {
+      reportStatus("failed");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `CPA auth-url failed: ${(error as Error).message}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
   }
 
   const client = new OpenAIClient({
@@ -242,9 +273,9 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   let callbackUrl: string;
   try {
-    console.log(`[CPA] ② OAuth 登录`);
+    console.log(`[${useSub2api ? "sub2api" : "CPA"}] ② OAuth 登录`);
     callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
-    console.log(`[CPA] ② ✓ OAuth 登录完成`);
+    console.log(`[${useSub2api ? "sub2api" : "CPA"}] ② ✓ OAuth 登录完成`);
   } catch (error) {
     const errMsg = (error as Error).message;
 
@@ -306,151 +337,248 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     };
   }
 
-  // Step 4: 提交 callback 给 CPA
+  // Step 4: 提交 callback (CPA 或 sub2api)
   reportStatus("cpa_submit");
 
-  try {
-    console.log(`[CPA] ③ 提交 callback 入库`);
-    const { status, body } = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl);
-    if (status >= 300) {
-      console.log(`[CPA] ③ ✗ 入库失败 status=${status}`);
-      throw new Error(`CPA oauth-callback failed: status=${status}`);
-    }
-    console.log(`[CPA] ③ ✓ 入库成功 status=${status}`);
-    log.debug(`[CPA] ③ 响应:`, body.slice(0, 500));
-  } catch (error) {
-    const errMsg = (error as Error).message;
+  if (useSub2api) {
+    // ─── sub2api 路径：exchangeCode + createFromOAuth ───
+    const { exchangeCode: sub2apiExchangeCode, createFromOAuth: sub2apiCreateFromOAuth } = await import("./sub2api.js");
 
-    // CPA 入库失败时，存储孤儿账号（OpenAI 账号已创建但 CPA 未收到）
-    if (bindEmail && db && db.saveOrphanedAccount) {
-      console.warn(`[cpa-registration] ${workerId} CPA 入库失败，存储孤儿账号`);
-      db.saveOrphanedAccount({
+    try {
+      // 从 callback URL 提取 code 和 state
+      const callbackUrlObj = new URL(callbackUrl);
+      const code = callbackUrlObj.searchParams.get("code") || "";
+      const state = callbackUrlObj.searchParams.get("state") || "";
+
+      if (!code) {
+        throw new Error(`callback URL 中没有 code 参数: ${callbackUrl.slice(0, 200)}`);
+      }
+
+      // 步骤 8: 用 code 换 token
+      const exchangeResult = await sub2apiExchangeCode(
+        appConfig.sub2apiBaseUrl,
+        sub2apiToken!,
+        sub2apiSessionId!,
+        code,
+        state,
+      );
+
+      // 步骤 9: 创建账户入库
+      const createResult = await sub2apiCreateFromOAuth(
+        appConfig.sub2apiBaseUrl,
+        sub2apiToken!,
+        exchangeResult.refreshToken,
+        appConfig.sub2apiGroupIds,
+      );
+
+      if (!createResult.success) {
+        throw new Error(`sub2api create-from-oauth 失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);
+      }
+
+      // 拿到 accessToken
+      const accessToken = exchangeResult.accessToken;
+
+      reportStatus("success");
+      console.log(`${"═".repeat(60)}`);
+      console.log(`✅ 注册成功 | ${phoneNumber} | ${bindEmail}`);
+      console.log(`✅ Token: ${accessToken.slice(0, 30)}... (${accessToken.length} 字符)`);
+      console.log(`✅ sub2api 账户 ID: ${createResult.accountId || "unknown"}`);
+      console.log(`✅ IP: ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
+      console.log(`${"═".repeat(60)}\n`);
+
+      return {
+        status: "ok",
         phone: phoneNumber,
         email: bindEmail,
         password,
-        activation_id: activationId,
-        error_type: "cpa_callback_failed",
-        error_message: errMsg,
-        sms_code: smsCode || null,
-        openai_registered: 1,
-      });
-      console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（CPA 入库失败）`);
-    }
+        accessToken,
+        activationId,
+        workerId,
+        attemptId,
+        ipAddress: ipInfo.ip,
+        ipCountry: ipInfo.country,
+        ipCity: ipInfo.city,
+        ipIsp: ipInfo.isp,
+        ipIsResidential: ipInfo.isResidential,
+      };
+    } catch (error) {
+      const errMsg = (error as Error).message;
 
-    reportStatus("failed");
-    return {
-      status: "failed",
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: `CPA callback failed: ${errMsg}`,
-      activationId,
-      workerId,
-      attemptId,
-    };
-  }
-
-  // Step 5: 拉取 auth 文件
-  reportStatus("waiting_email_otp");
-
-  try {
-    console.log(`[CPA] ④ 拉取 auth 文件...`);
-    const emailLc = bindEmail.toLowerCase();
-    const candidates = [
-      `codex-${emailLc}.json`,
-      `codex-${emailLc}-plus.json`,
-    ];
-    const matchFile = (files: any[]) => {
-      for (const want of candidates) {
-        const hit = files.find(f => String(f.name || "").toLowerCase() === want);
-        if (hit) return hit;
+      // sub2api 入库失败时，存储孤儿账号
+      if (bindEmail && db && db.saveOrphanedAccount) {
+        console.warn(`[cpa-registration] ${workerId} sub2api 入库失败，存储孤儿账号`);
+        db.saveOrphanedAccount({
+          phone: phoneNumber,
+          email: bindEmail,
+          password,
+          activation_id: activationId,
+          error_type: "sub2api_callback_failed",
+          error_message: errMsg,
+          sms_code: smsCode || null,
+          openai_registered: 1,
+        });
+        console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（sub2api 入库失败）`);
       }
-      return null;
-    };
 
-    const POLL_MAX_ATTEMPTS = 12;
-    const POLL_INTERVAL_MS = 3000;
-    let latest: any = null;
-    let lastFileCount = -1;
-
-    for (let attempt = 1; attempt <= POLL_MAX_ATTEMPTS; attempt += 1) {
-      const files = await listAuthFiles(cpaBase, cpaKey);
-      lastFileCount = files.length;
-      latest = matchFile(files);
-      if (latest) {
-        console.log(`[CPA] ④ ✓ 匹配到: ${latest.name} (attempt=${attempt})`);
-        break;
-      }
-      if (attempt < POLL_MAX_ATTEMPTS) {
-        console.log(`[cpa-registration] ${workerId} 等待 auth 文件 (attempt=${attempt}/${POLL_MAX_ATTEMPTS})`);
-        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-      }
-    }
-
-    if (!latest) {
+      reportStatus("failed");
       return {
         status: "failed",
         phone: phoneNumber,
         email: bindEmail,
         password,
-        error: `CPA auth file not found after ${POLL_MAX_ATTEMPTS * POLL_INTERVAL_MS}ms`,
+        error: `sub2api callback failed: ${errMsg}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
+  } else {
+    // ─── CPA 路径（原有逻辑）───
+    const { submitOAuthCallback, listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
+
+    try {
+      console.log(`[CPA] ③ 提交 callback 入库`);
+      const { status, body } = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl);
+      if (status >= 300) {
+        console.log(`[CPA] ③ ✗ 入库失败 status=${status}`);
+        throw new Error(`CPA oauth-callback failed: status=${status}`);
+      }
+      console.log(`[CPA] ③ ✓ 入库成功 status=${status}`);
+      log.debug(`[CPA] ③ 响应:`, body.slice(0, 500));
+    } catch (error) {
+      const errMsg = (error as Error).message;
+
+      // CPA 入库失败时，存储孤儿账号（OpenAI 账号已创建但 CPA 未收到）
+      if (bindEmail && db && db.saveOrphanedAccount) {
+        console.warn(`[cpa-registration] ${workerId} CPA 入库失败，存储孤儿账号`);
+        db.saveOrphanedAccount({
+          phone: phoneNumber,
+          email: bindEmail,
+          password,
+          activation_id: activationId,
+          error_type: "cpa_callback_failed",
+          error_message: errMsg,
+          sms_code: smsCode || null,
+          openai_registered: 1,
+        });
+        console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（CPA 入库失败）`);
+      }
+
+      reportStatus("failed");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `CPA callback failed: ${errMsg}`,
         activationId,
         workerId,
         attemptId,
       };
     }
 
-    const auth = await downloadAuthFile(cpaBase, cpaKey, latest.name);
-    const tok = String(auth?.access_token || "").trim();
-    if (!tok) {
+    // Step 5: 拉取 auth 文件（仅 CPA 路径需要）
+    reportStatus("waiting_email_otp");
+
+    try {
+      console.log(`[CPA] ④ 拉取 auth 文件...`);
+      const emailLc = bindEmail.toLowerCase();
+      const candidates = [
+        `codex-${emailLc}.json`,
+        `codex-${emailLc}-plus.json`,
+      ];
+      const matchFile = (files: any[]) => {
+        for (const want of candidates) {
+          const hit = files.find(f => String(f.name || "").toLowerCase() === want);
+          if (hit) return hit;
+        }
+        return null;
+      };
+
+      const POLL_MAX_ATTEMPTS = 12;
+      const POLL_INTERVAL_MS = 3000;
+      let latest: any = null;
+      let lastFileCount = -1;
+
+      for (let attempt = 1; attempt <= POLL_MAX_ATTEMPTS; attempt += 1) {
+        const files = await listAuthFiles(cpaBase, cpaKey);
+        lastFileCount = files.length;
+        latest = matchFile(files);
+        if (latest) {
+          console.log(`[CPA] ④ ✓ 匹配到: ${latest.name} (attempt=${attempt})`);
+          break;
+        }
+        if (attempt < POLL_MAX_ATTEMPTS) {
+          console.log(`[cpa-registration] ${workerId} 等待 auth 文件 (attempt=${attempt}/${POLL_MAX_ATTEMPTS})`);
+          await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+        }
+      }
+
+      if (!latest) {
+        return {
+          status: "failed",
+          phone: phoneNumber,
+          email: bindEmail,
+          password,
+          error: `CPA auth file not found after ${POLL_MAX_ATTEMPTS * POLL_INTERVAL_MS}ms`,
+          activationId,
+          workerId,
+          attemptId,
+        };
+      }
+
+      const auth = await downloadAuthFile(cpaBase, cpaKey, latest.name);
+      const tok = String(auth?.access_token || "").trim();
+      if (!tok) {
+        return {
+          status: "failed",
+          phone: phoneNumber,
+          email: bindEmail,
+          password,
+          error: "Auth file missing access_token",
+          cpaAuthFile: latest.name,
+          activationId,
+          workerId,
+          attemptId,
+        };
+      }
+
+      reportStatus("success");
+      console.log(`${"═".repeat(60)}`);
+      console.log(`✅ 注册成功 | ${phoneNumber} | ${bindEmail}`);
+      console.log(`✅ Token: ${tok.slice(0, 30)}... (${tok.length} 字符)`);
+      console.log(`✅ Auth 文件: ${latest.name}`);
+      console.log(`✅ IP: ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
+      console.log(`${"═".repeat(60)}\n`);
+
       return {
-        status: "failed",
+        status: "ok",
         phone: phoneNumber,
         email: bindEmail,
         password,
-        error: "Auth file missing access_token",
+        accessToken: tok,
         cpaAuthFile: latest.name,
         activationId,
         workerId,
         attemptId,
+        ipAddress: ipInfo.ip,
+        ipCountry: ipInfo.country,
+        ipCity: ipInfo.city,
+        ipIsp: ipInfo.isp,
+        ipIsResidential: ipInfo.isResidential,
+      };
+    } catch (error) {
+      reportStatus("failed");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `Auth file fetch failed: ${(error as Error).message}`,
+        activationId,
+        workerId,
+        attemptId,
       };
     }
-
-    reportStatus("success");
-    console.log(`${"═".repeat(60)}`);
-    console.log(`✅ 注册成功 | ${phoneNumber} | ${bindEmail}`);
-    console.log(`✅ Token: ${tok.slice(0, 30)}... (${tok.length} 字符)`);
-    console.log(`✅ Auth 文件: ${latest.name}`);
-    console.log(`✅ IP: ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
-    console.log(`${"═".repeat(60)}\n`);
-
-    return {
-      status: "ok",
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      accessToken: tok,
-      cpaAuthFile: latest.name,
-      activationId,
-      workerId,
-      attemptId,
-      ipAddress: ipInfo.ip,
-      ipCountry: ipInfo.country,
-      ipCity: ipInfo.city,
-      ipIsp: ipInfo.isp,
-      ipIsResidential: ipInfo.isResidential,
-    };
-  } catch (error) {
-    reportStatus("failed");
-    return {
-      status: "failed",
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: `Auth file fetch failed: ${(error as Error).message}`,
-      activationId,
-      workerId,
-      attemptId,
-    };
   }
 }

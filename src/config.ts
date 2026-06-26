@@ -39,6 +39,11 @@ interface AppConfigFile {
     profileIpLookupTimeoutMs?: unknown;
     profileLocaleByCountry?: unknown;
     logLevel?: unknown;
+    tokenBackend?: unknown;
+    sub2apiBaseUrl?: unknown;
+    sub2apiEmail?: unknown;
+    sub2apiPassword?: unknown;
+    sub2apiGroupIds?: unknown;
 }
 
 export interface AppConfig {
@@ -78,6 +83,11 @@ export interface AppConfig {
     profileIpLookupTimeoutMs: number;
     profileLocaleByCountry: Record<string, string>;
     logLevel: "info" | "debug";
+    tokenBackend: "cpa" | "sub2api";
+    sub2apiBaseUrl: string;
+    sub2apiEmail: string;
+    sub2apiPassword: string;
+    sub2apiGroupIds: number[];
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -124,6 +134,11 @@ const DEFAULT_CONFIG: AppConfig = {
         DE: "de",
     },
     logLevel: "info",
+    tokenBackend: "cpa",
+    sub2apiBaseUrl: "",
+    sub2apiEmail: "",
+    sub2apiPassword: "",
+    sub2apiGroupIds: [14],
 };
 
 function normalizeNumber(value: unknown, fallback: number): number {
@@ -169,6 +184,23 @@ function normalizeStringRecord(value: unknown, fallback: Record<string, string>)
         }
     }
     return Object.keys(out).length ? out : {...fallback};
+}
+
+function normalizeTokenBackend(value: unknown): "cpa" | "sub2api" {
+    if (value === "cpa" || value === "sub2api") {
+        return value;
+    }
+    return DEFAULT_CONFIG.tokenBackend;
+}
+
+function normalizeNumberArray(value: unknown, fallback: number[]): number[] {
+    if (!Array.isArray(value)) {
+        return [...fallback];
+    }
+    const out = (value as unknown[])
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v) && v >= 0);
+    return out.length > 0 ? out : [...fallback];
 }
 
 function normalizeString(value: unknown, fallback: string): string {
@@ -309,6 +341,10 @@ function loadConfig(): AppConfig {
         profileIpLookupTimeoutMs: normalizePositiveInteger(parsed.profileIpLookupTimeoutMs, DEFAULT_CONFIG.profileIpLookupTimeoutMs),
         profileLocaleByCountry: normalizeStringRecord(parsed.profileLocaleByCountry, DEFAULT_CONFIG.profileLocaleByCountry),
         logLevel: parsed.logLevel === "debug" ? "debug" : "info",
+        tokenBackend: normalizeTokenBackend(parsed.tokenBackend),
+        sub2apiBaseUrl: normalizeString(parsed.sub2apiBaseUrl, DEFAULT_CONFIG.sub2apiBaseUrl),
+        sub2apiToken: normalizeString(parsed.sub2apiToken, DEFAULT_CONFIG.sub2apiToken),
+        sub2apiGroupIds: normalizeNumberArray(parsed.sub2apiGroupIds, DEFAULT_CONFIG.sub2apiGroupIds),
     };
 }
 
