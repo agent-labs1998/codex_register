@@ -144,6 +144,7 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
             token_expires_at: null,
             cpa_auth_file: "",
             cpa_base_url: cpaBase,
+            token_backend: appConfig.tokenBackend || "cpa",
             status: "active",
           });
           console.log(`[恢复] ✓ 已写入 accounts 表（邮箱: ${newEmail}）`);

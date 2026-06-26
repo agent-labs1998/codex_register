@@ -193,12 +193,13 @@ export class WorkerScheduler {
           access_token: result.accessToken || "",
           token_expires_at: null,
           cpa_auth_file: result.cpaAuthFile || "",
-          cpa_base_url: appConfig.cliproxyApiBaseUrl || "",
+          cpa_base_url: appConfig.cpa.baseUrl || "",
           ip_address: ipInfo?.ip || "unknown",
           ip_country: ipInfo?.country || "unknown",
           ip_city: ipInfo?.city || "unknown",
           ip_isp: ipInfo?.isp || "unknown",
           ip_is_residential: ipInfo?.isResidential ? 1 : 0,
+          token_backend: appConfig.tokenBackend || "cpa",
           status: "active",
         });
 

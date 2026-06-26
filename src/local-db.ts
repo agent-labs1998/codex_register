@@ -45,6 +45,7 @@ interface Account {
   ip_city: string;
   ip_isp: string;
   ip_is_residential: number;
+  token_backend: string;
   created_at: string;
   updated_at: string;
   status: string;
@@ -154,6 +155,7 @@ export class LocalDB {
         ip_city TEXT,
         ip_isp TEXT,
         ip_is_residential INTEGER DEFAULT 0,
+        token_backend TEXT DEFAULT 'cpa',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         status TEXT NOT NULL DEFAULT 'active'
@@ -222,6 +224,13 @@ export class LocalDB {
     } catch {
       // 列已存在，忽略
     }
+
+    // 兼容旧数据库：给 accounts 加 token_backend 列
+    try {
+      this.db.prepare("ALTER TABLE accounts ADD COLUMN token_backend TEXT DEFAULT 'cpa'").run();
+    } catch {
+      // 列已存在，忽略
+    }
   }
 
   createWorkflowRun(workflow: string, options?: object): number {
@@ -283,8 +292,8 @@ export class LocalDB {
 
   saveAccount(account: Omit<Account, "id" | "created_at" | "updated_at">): number {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO accounts (phone, email, password, access_token, token_expires_at, cpa_auth_file, cpa_base_url, ip_address, ip_country, ip_city, ip_isp, ip_is_residential, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO accounts (phone, email, password, access_token, token_expires_at, cpa_auth_file, cpa_base_url, ip_address, ip_country, ip_city, ip_isp, ip_is_residential, token_backend, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       account.phone,
@@ -299,6 +308,7 @@ export class LocalDB {
       account.ip_city || null,
       account.ip_isp || null,
       account.ip_is_residential || 0,
+      account.token_backend || "cpa",
       account.status || "active"
     );
     return result.lastInsertRowid as number;

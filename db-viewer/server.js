@@ -26,7 +26,7 @@ const db = new DatabaseSync(DB_PATH, { readOnly: true });
 const server = createServer((req, res) => {
   const url = new URL(req.url, "http://localhost:" + PORT);
 
-  if (url.pathname === "/api/accounts") return jsonResponse(res, query(db, "SELECT * FROM accounts ORDER BY id DESC"));
+  if (url.pathname === "/api/accounts") return jsonResponse(res, query(db, "SELECT id, phone, email, ip_address, ip_country, ip_city, ip_isp, token_backend, status, created_at, access_token FROM accounts ORDER BY id DESC"));
   if (url.pathname === "/api/runs") return jsonResponse(res, query(db, "SELECT * FROM workflow_runs ORDER BY id DESC"));
   if (url.pathname === "/api/workers") return jsonResponse(res, query(db, "SELECT * FROM worker_slots ORDER BY id DESC LIMIT 200"));
   if (url.pathname === "/api/attempts") return jsonResponse(res, query(db, "SELECT * FROM registration_attempts ORDER BY id DESC LIMIT 200"));

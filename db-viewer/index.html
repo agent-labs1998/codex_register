@@ -40,7 +40,7 @@ tr:hover{background:#161b22}
 <div class="content" id="content"><div id="loading">加载中...</div></div>
 <script>
 const TABS = [
-  { key: "accounts", label: "成功账号", api: "/api/accounts", cols: ["id","phone","email","ip_address","ip_country","ip_city","ip_isp","status","created_at","access_token"], colNames: {id:"ID",phone:"手机号",email:"邮箱",ip_address:"IP地址",ip_country:"国家",ip_city:"城市",ip_isp:"运营商",status:"状态",created_at:"创建时间",access_token:"Token"} },
+  { key: "accounts", label: "成功账号", api: "/api/accounts", cols: ["id","phone","email","ip_address","ip_country","ip_city","ip_isp","token_backend","status","created_at","access_token"], colNames: {id:"ID",phone:"手机号",email:"邮箱",ip_address:"IP地址",ip_country:"国家",ip_city:"城市",ip_isp:"运营商",token_backend:"入库后端",status:"状态",created_at:"创建时间",access_token:"Token"} },
   { key: "runs", label: "运行记录", api: "/api/runs", cols: ["id","workflow_name","status","started_at","finished_at","success_count","failure_count"], colNames: {id:"ID",workflow_name:"工作流",status:"状态",started_at:"开始时间",finished_at:"结束时间",success_count:"成功数",failure_count:"失败数"} },
   { key: "workers", label: "Worker 节点", api: "/api/workers", cols: ["id","worker_id","run_id","phone","bind_email","status","last_error","created_at"], colNames: {id:"ID",worker_id:"Worker ID",run_id:"运行ID",phone:"手机号",bind_email:"绑定邮箱",status:"状态",last_error:"错误信息",created_at:"创建时间"} },
   { key: "attempts", label: "注册尝试", api: "/api/attempts", cols: ["id","run_id","phone","email","status","error","cpa_status","cpa_auth_file","started_at","finished_at"], colNames: {id:"ID",run_id:"运行ID",phone:"手机号",email:"邮箱",status:"状态",error:"错误",cpa_status:"CPA状态",cpa_auth_file:"Auth文件",started_at:"开始时间",finished_at:"结束时间"} },

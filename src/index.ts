@@ -82,8 +82,8 @@ async function runOnce(db?: LocalDB): Promise<void> {
     if (codexCpa) {
         const phoneArg = readArgValue("--phone").trim();
         const password = readArgValue("--password").trim() || appConfig.defaultPassword;
-        const cpaBase = readArgValue("--cpa-base").trim() || process.env.CPA_BASE_URL?.trim() || appConfig.cliproxyApiBaseUrl || "https://YOUR_CPA_URL";
-        const cpaKey = readArgValue("--cpa-key").trim() || process.env.CPA_MANAGEMENT_KEY?.trim() || appConfig.cliproxyApiManagementKey || "";
+        const cpaBase = readArgValue("--cpa-base").trim() || process.env.CPA_BASE_URL?.trim() || appConfig.cpa.baseUrl || "https://YOUR_CPA_URL";
+        const cpaKey = readArgValue("--cpa-key").trim() || process.env.CPA_MANAGEMENT_KEY?.trim() || appConfig.cpa.managementKey || "";
         if (!cpaKey) {
             throw new Error("--codex-cpa 需要 --cpa-key 或 CPA_MANAGEMENT_KEY 环境变量");
         }
@@ -256,7 +256,7 @@ async function runOnce(db?: LocalDB): Promise<void> {
         }
 
         // 根据 tokenBackend 选择后端
-        const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2apiBaseUrl && appConfig.sub2apiEmail;
+        const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
 
         let authorizeUrl: string;
         let sub2apiSessionId: string | undefined;
@@ -266,9 +266,9 @@ async function runOnce(db?: LocalDB): Promise<void> {
             // ─── sub2api 路径 ───
             const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
 
-            sub2apiToken = await sub2apiLogin(appConfig.sub2apiBaseUrl, appConfig.sub2apiEmail, appConfig.sub2apiPassword);
+            sub2apiToken = await sub2apiLogin(appConfig.sub2api.baseUrl, appConfig.sub2api.email, appConfig.sub2api.password);
             console.log(`[codex-cpa] [1] sub2api generate-auth-url`);
-            const result = await sub2apiGenerateAuthUrl(appConfig.sub2apiBaseUrl, sub2apiToken);
+            const result = await sub2apiGenerateAuthUrl(appConfig.sub2api.baseUrl, sub2apiToken);
             authorizeUrl = result.authUrl;
             sub2apiSessionId = result.sessionId;
             console.log(`[codex-cpa]     authorize: ${authorizeUrl.slice(0, 120)}...`);
@@ -331,7 +331,7 @@ async function runOnce(db?: LocalDB): Promise<void> {
 
             // 步骤 8: 用 code 换 token
             const exchangeResult = await sub2apiExchangeCode(
-                appConfig.sub2apiBaseUrl,
+                appConfig.sub2api.baseUrl,
                 sub2apiToken!,
                 sub2apiSessionId!,
                 code,
@@ -340,10 +340,10 @@ async function runOnce(db?: LocalDB): Promise<void> {
 
             // 步骤 9: 创建账户入库
             const createResult = await sub2apiCreateFromOAuth(
-                appConfig.sub2apiBaseUrl,
+                appConfig.sub2api.baseUrl,
                 sub2apiToken!,
                 exchangeResult.refreshToken,
-                appConfig.sub2apiGroupIds,
+                appConfig.sub2api.groupIds,
             );
 
             if (!createResult.success) {
@@ -532,6 +532,7 @@ async function runOnce(db?: LocalDB): Promise<void> {
                 ip_city: ipInfo?.city || "unknown",
                 ip_isp: ipInfo?.isp || "unknown",
                 ip_is_residential: ipInfo?.isResidential ? 1 : 0,
+                token_backend: useSub2api ? "sub2api" : "cpa",
                 status: "active",
             });
 
@@ -1160,12 +1161,13 @@ async function main() {
                     access_token: result.accessToken || "",
                     token_expires_at: null,
                     cpa_auth_file: result.cpaAuthFile || "",
-                    cpa_base_url: appConfig.cliproxyApiBaseUrl || "",
+                    cpa_base_url: appConfig.cpa.baseUrl || "",
                     ip_address: result.ipAddress || "unknown",
                     ip_country: result.ipCountry || "unknown",
                     ip_city: result.ipCity || "unknown",
                     ip_isp: result.ipIsp || "unknown",
                     ip_is_residential: result.ipIsResidential ? 1 : 0,
+                    token_backend: appConfig.tokenBackend || "cpa",
                     status: "active",
                   });
 
@@ -1354,8 +1356,8 @@ async function main() {
     if (hasFlag("--recover-orphans")) {
         const dbPath = readArgValue("--db-path").trim() || "data/codex-register.sqlite";
         const maxAttempts = readNumberArg("--max") || 10;
-        const cpaBase = readArgValue("--cpa-base").trim() || process.env.CPA_BASE_URL?.trim() || appConfig.cliproxyApiBaseUrl || "";
-        const cpaKey = readArgValue("--cpa-key").trim() || process.env.CPA_MANAGEMENT_KEY?.trim() || appConfig.cliproxyApiManagementKey || "";
+        const cpaBase = readArgValue("--cpa-base").trim() || process.env.CPA_BASE_URL?.trim() || appConfig.cpa.baseUrl || "";
+        const cpaKey = readArgValue("--cpa-key").trim() || process.env.CPA_MANAGEMENT_KEY?.trim() || appConfig.cpa.managementKey || "";
 
         if (!cpaBase || !cpaKey) {
           throw new Error("缺少 CPA 配置: 需要 --cpa-base 和 --cpa-key 参数，或在 config.json 中配置");

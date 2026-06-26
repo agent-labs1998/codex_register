@@ -377,8 +377,8 @@ async function executeSingleRegistration(
   const { phoneNumber, activationId, lease, receivedAt, workerId, attemptId } = phoneLease;
   const { smsTimeoutMs, emailTimeoutMs, cpaTimeoutMs, tokenOutPath, db } = options;
   const password = appConfig.defaultPassword;
-  const cpaBase = appConfig.cliproxyApiBaseUrl || "";
-  const cpaKey = appConfig.cliproxyApiManagementKey || "";
+  const cpaBase = appConfig.cpa.baseUrl || "";
+  const cpaKey = appConfig.cpa.managementKey || "";
 
   if (!cpaKey) {
     await pool.cancelPhone(phoneLease);
@@ -846,6 +846,7 @@ async function executeSingleRegistration(
       ip_city: ipInfo.city,
       ip_isp: ipInfo.isp,
       ip_is_residential: ipInfo.isResidential ? 1 : 0,
+      token_backend: appConfig.tokenBackend || "cpa",
       status: "active",
     });
 
