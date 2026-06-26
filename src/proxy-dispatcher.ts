@@ -14,8 +14,8 @@ export function createProxyDispatcher(proxyUrl: string, allowInsecureTLS = false
             connect: {
                 rejectUnauthorized: !allowInsecureTLS,
             },
-            keepAliveTimeout: 0,
-            keepAliveMaxTimeout: 0,
+            keepAliveTimeout: 1,
+            keepAliveMaxTimeout: 1,
         });
     }
 
@@ -38,8 +38,8 @@ export function createProxyDispatcher(proxyUrl: string, allowInsecureTLS = false
 
         return new Agent({
             connect,
-            keepAliveTimeout: 0,
-            keepAliveMaxTimeout: 0,
+            keepAliveTimeout: 1,
+            keepAliveMaxTimeout: 1,
         });
     }
 

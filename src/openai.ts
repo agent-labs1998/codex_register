@@ -55,8 +55,8 @@ function createDispatcher(proxyUrl: string, allowInsecureTLS: boolean): Dispatch
             connect: {
                 rejectUnauthorized: !allowInsecureTLS,
             },
-            keepAliveTimeout: 0,
-            keepAliveMaxTimeout: 0,
+            keepAliveTimeout: 1,
+            keepAliveMaxTimeout: 1,
         });
     }
 
@@ -79,8 +79,8 @@ function createDispatcher(proxyUrl: string, allowInsecureTLS: boolean): Dispatch
 
         return new Agent({
             connect,
-            keepAliveTimeout: 0,
-            keepAliveMaxTimeout: 0,
+            keepAliveTimeout: 1,
+            keepAliveMaxTimeout: 1,
         });
     }
 
