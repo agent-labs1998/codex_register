@@ -98,10 +98,12 @@ export async function generateAuthUrl(
             const body = await response.text().catch(() => "");
             throw new Error(`sub2api generate-auth-url 失败: status=${response.status} body=${body.slice(0, 300)}`);
         }
-        const data = (await response.json()) as Record<string, any>;
+        const raw = (await response.json()) as Record<string, any>;
+        // sub2api 响应格式: {"code":0,"message":"success","data":{...}}
+        const data = raw.data || raw;
         const authUrl: string = data.auth_url || data.authUrl || data.url || "";
         if (!authUrl || !authUrl.startsWith("http")) {
-            throw new Error(`sub2api generate-auth-url 未返回有效 URL: ${JSON.stringify(data).slice(0, 300)}`);
+            throw new Error(`sub2api generate-auth-url 未返回有效 URL: ${JSON.stringify(raw).slice(0, 300)}`);
         }
         const sessionId: string = data.session_id || data.sessionId || "";
         if (!sessionId) {
@@ -143,11 +145,12 @@ export async function exchangeCode(
             const body = await response.text().catch(() => "");
             throw new Error(`sub2api exchange-code 失败: status=${response.status} body=${body.slice(0, 300)}`);
         }
-        const data = (await response.json()) as Record<string, any>;
+        const raw = (await response.json()) as Record<string, any>;
+        const data = raw.data || raw;
         const accessToken: string = data.access_token || data.accessToken || "";
         const refreshToken: string = data.refresh_token || data.refreshToken || "";
         if (!refreshToken) {
-            throw new Error(`sub2api exchange-code 未返回 refresh_token: ${JSON.stringify(data).slice(0, 300)}`);
+            throw new Error(`sub2api exchange-code 未返回 refresh_token: ${JSON.stringify(raw).slice(0, 300)}`);
         }
         console.log(`[sub2api] ② ✓ Token 已获取`);
         return {accessToken, refreshToken};
@@ -194,7 +197,8 @@ export async function createFromOAuth(
         }
         console.log(`[sub2api] ③ ✓ 入库成功 status=${status}`);
         try {
-            const data = JSON.parse(body) as Record<string, any>;
+            const raw = JSON.parse(body) as Record<string, any>;
+            const data = raw.data || raw;
             return {success: true, status, body, accountId: data.id || undefined};
         } catch {
             return {success: true, status, body};
