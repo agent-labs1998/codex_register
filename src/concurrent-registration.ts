@@ -551,43 +551,16 @@ async function executeSingleRegistration(
     };
   }
 
-  // Step 4: CPA OAuth
+  // Step 4: CPA OAuth —— email_already_in_use 时换邮箱重试
   db.updateWorkerSlot(workerId, { status: "cpa_oauth" });
   db.updateAttempt(attemptId, { status: "cpa_oauth" });
 
   const { requestCodexAuthUrl, submitOAuthCallback, listAuthFiles, downloadAuthFile } = await import("./cpa-codex.js");
 
-  let authorizeUrl: string;
-  try {
-    console.log(`[concurrent] ${workerId} [1] CPA codex-auth-url`);
-    const result = await requestCodexAuthUrl(cpaBase, cpaKey);
-    authorizeUrl = result.authorizeUrl;
-    console.log(`[concurrent] ${workerId} authorize: ${authorizeUrl.slice(0, 120)}...`);
-  } catch (error) {
-    pool.removeLease(phoneLease);
+  const MAX_EMAIL_RETRIES = 3;
+  let callbackUrl: string | undefined;
 
-    db.updateWorkerSlot(workerId, {
-      status: "failed",
-      last_error: `CPA auth-url failed: ${(error as Error).message}`,
-    });
-
-    db.updateAttempt(attemptId, {
-      status: "failed",
-      error: `CPA auth-url failed: ${(error as Error).message}`,
-    });
-
-    return {
-      success: false,
-      phone: phoneNumber,
-      email: bindEmail,
-      password,
-      error: `CPA auth-url failed: ${(error as Error).message}`,
-      activationId,
-      workerId,
-      attemptId,
-    };
-  }
-
+  // 创建 OAuth 客户端（整个重试过程复用同一个，保持 session/IP/指纹不变）
   const client = new OpenAIClient({
     email: phoneNumber,
     password,
@@ -598,68 +571,139 @@ async function executeSingleRegistration(
     fetchAddEmailOtp,
   });
 
-  let callbackUrl: string;
-  try {
-    console.log(`[concurrent] ${workerId} [2] 走 OAuth 登录`);
-    callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
-    console.log(`[concurrent] ${workerId} callback: ${callbackUrl.slice(0, 120)}...`);
-  } catch (error) {
-    const errMsg = (error as Error).message;
-    pool.removeLease(phoneLease);
+  for (let emailRetry = 0; emailRetry <= MAX_EMAIL_RETRIES; emailRetry++) {
+    // 如果是重试（email_already_in_use），换新邮箱，但保持同一个 client
+    if (emailRetry > 0) {
+      console.log(`[concurrent] ${workerId} 邮箱被占用，换新邮箱重试 (${emailRetry}/${MAX_EMAIL_RETRIES})`);
+      db.updateWorkerSlot(workerId, { status: "retrying_email" });
 
-    // 邮箱绑定失败时，处理邮箱状态和孤儿账号
-    if (bindEmail) {
-      if (errMsg.includes("email_already_in_use")) {
-        // 邮箱已被占用，标记为失败
-        console.warn(`[concurrent] ${workerId} 邮箱 ${bindEmail} 已被占用，标记为 failed`);
+      // 标记旧邮箱为 failed
+      if (bindEmail) {
         db.markHotmailAccountFailed(bindEmail);
-        // 存储孤儿账号
-        db.saveOrphanedAccount({
-          phone: phoneNumber,
-          email: bindEmail || "",
-          password,
-          activation_id: activationId,
-          error_type: "email_already_in_use",
-          error_message: errMsg,
-          sms_code: smsCode || null,
-          openai_registered: 1,
-        });
-        console.log(`[concurrent] ${workerId} 已存储孤儿账号（邮箱已被占用）`);
-      } else {
-        // 其他错误（网络超时等），标记为可重试（retryable）
-        console.warn(`[concurrent] ${workerId} OAuth 登录失败，标记邮箱 ${bindEmail} 为可重试（retryable）`);
-        db.resetHotmailAccount(bindEmail);  // 会标记为 retryable
-        // 也存储孤儿账号，方便后续追踪
+      }
+
+      // 获取新邮箱
+      try {
+        const mailbox = await import("./mailbox.js");
+        bindEmail = await mailbox.getEmailAddress();
+        fetchAddEmailOtp = async () => {
+          const startedAt = Date.now();
+          console.log(`[concurrent] ${workerId} 等待邮件 OTP for ${bindEmail}`);
+          return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
+        };
+        console.log(`[concurrent] ${workerId} 新邮箱: ${bindEmail}`);
+
+        // 更新同一个 client 的邮箱（不重建 client，保持 session/IP/指纹不变）
+        client.bindEmail = bindEmail;
+        client.fetchAddEmailOtp = fetchAddEmailOtp;
+
+        db.updateWorkerSlot(workerId, { bind_email: bindEmail });
+        db.updateAttempt(attemptId, { email: bindEmail });
+      } catch (error) {
+        console.warn(`[concurrent] ${workerId} 换邮箱失败: ${(error as Error).message}`);
+        break;
+      }
+    }
+
+    let authorizeUrl: string;
+    try {
+      console.log(`[concurrent] ${workerId} [1] CPA codex-auth-url`);
+      const result = await requestCodexAuthUrl(cpaBase, cpaKey);
+      authorizeUrl = result.authorizeUrl;
+      console.log(`[concurrent] ${workerId} authorize: ${authorizeUrl.slice(0, 120)}...`);
+    } catch (error) {
+      pool.removeLease(phoneLease);
+
+      db.updateWorkerSlot(workerId, {
+        status: "failed",
+        last_error: `CPA auth-url failed: ${(error as Error).message}`,
+      });
+
+      db.updateAttempt(attemptId, {
+        status: "failed",
+        error: `CPA auth-url failed: ${(error as Error).message}`,
+      });
+
+      return {
+        success: false,
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `CPA auth-url failed: ${(error as Error).message}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
+
+    try {
+      console.log(`[concurrent] ${workerId} [2] 走 OAuth 登录`);
+      callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
+      console.log(`[concurrent] ${workerId} callback: ${callbackUrl.slice(0, 120)}...`);
+      break; // 成功，跳出重试循环
+    } catch (error) {
+      const errMsg = (error as Error).message;
+
+      if (errMsg.includes("email_already_in_use") && emailRetry < MAX_EMAIL_RETRIES) {
+        console.warn(`[concurrent] ${workerId} 邮箱 ${bindEmail} 已被占用，将换新邮箱重试`);
+        continue; // 换邮箱重试
+      }
+
+      // 其他错误或重试耗尽
+      pool.removeLease(phoneLease);
+
+      if (bindEmail) {
+        if (errMsg.includes("email_already_in_use")) {
+          console.warn(`[concurrent] ${workerId} 邮箱 ${bindEmail} 已被占用，重试耗尽`);
+          db.markHotmailAccountFailed(bindEmail);
+        } else {
+          console.warn(`[concurrent] ${workerId} OAuth 登录失败，标记邮箱 ${bindEmail} 为可重试（retryable）`);
+          db.resetHotmailAccount(bindEmail);
+        }
         db.saveOrphanedAccount({
           phone: phoneNumber,
           email: bindEmail,
           password,
           activation_id: activationId,
-          error_type: "other",
+          error_type: errMsg.includes("email_already_in_use") ? "email_already_in_use" : "other",
           error_message: errMsg,
           sms_code: smsCode || null,
           openai_registered: 1,
         });
-        console.log(`[concurrent] ${workerId} 已存储孤儿账号（OAuth 登录失败）`);
+        console.log(`[concurrent] ${workerId} 已存储孤儿账号`);
       }
+
+      db.updateWorkerSlot(workerId, {
+        status: "failed",
+        last_error: `OAuth login failed: ${errMsg}`,
+      });
+
+      db.updateAttempt(attemptId, {
+        status: "failed",
+        error: `OAuth login failed: ${errMsg}`,
+      });
+
+      return {
+        success: false,
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `OAuth login failed: ${errMsg}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
     }
+  }
 
-    db.updateWorkerSlot(workerId, {
-      status: "failed",
-      last_error: `OAuth login failed: ${errMsg}`,
-    });
-
-    db.updateAttempt(attemptId, {
-      status: "failed",
-      error: `OAuth login failed: ${errMsg}`,
-    });
-
+  if (!callbackUrl) {
+    pool.removeLease(phoneLease);
     return {
       success: false,
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: `OAuth login failed: ${errMsg}`,
+      error: "OAuth login failed: no callback URL after retries",
       activationId,
       workerId,
       attemptId,
@@ -672,7 +716,7 @@ async function executeSingleRegistration(
 
   try {
     console.log(`[concurrent] ${workerId} [3] 提交 callback 给 CPA`);
-    const { status, body } = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl);
+    const { status, body } = await submitOAuthCallback(cpaBase, cpaKey, callbackUrl!);
     console.log(`[concurrent] ${workerId} CPA status=${status}`);
     console.log(`[concurrent] ${workerId} CPA body: ${body.slice(0, 500)}`);
     if (status >= 300) {

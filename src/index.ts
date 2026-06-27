@@ -342,7 +342,9 @@ async function runOnce(db?: LocalDB): Promise<void> {
             const createResult = await sub2apiCreateFromOAuth(
                 appConfig.sub2api.baseUrl,
                 sub2apiToken!,
-                exchangeResult.refreshToken,
+                sub2apiSessionId!,
+                code,
+                state,
                 appConfig.sub2api.groupIds,
             );
 

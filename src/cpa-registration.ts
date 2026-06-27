@@ -190,8 +190,9 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     }
   }
 
-  // Step 3: OAuth (CPA 或 sub2api)
-  reportStatus("cpa_oauth");
+  // Step 3: OAuth (CPA 或 sub2api) —— email_already_in_use 时换邮箱重试
+  const MAX_EMAIL_RETRIES = 3;
+  let callbackUrl: string | undefined;
 
   // 打印当前使用的 IP（通过代理检测出口 IP）
   const { setGlobalDispatcher } = await import("undici");
@@ -208,84 +209,131 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   const mobileTag = ipInfo.isMobile ? "📱 移动" : "";
   console.log(`[IP] ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp} | ${residentialTag} ${proxyTag} ${mobileTag}`);
 
-  // 根据 tokenBackend 选择后端
-  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
+  // 创建 OAuth 客户端（整个重试过程复用同一个，保持 session/IP/指纹不变）
+    const client = new OpenAIClient({
+      email: phoneNumber,
+      password,
+      deviceProfile: generateRandomDeviceProfile(),
+      manualMode: false,
+      smsBroker: undefined,
+      bindEmail,
+      fetchAddEmailOtp,
+    });
 
-  let authorizeUrl: string;
-  let sub2apiSessionId: string | undefined;
-  let sub2apiToken: string | undefined;
+  for (let emailRetry = 0; emailRetry <= MAX_EMAIL_RETRIES; emailRetry++) {
+    // 如果是重试（email_already_in_use），换新邮箱，但保持同一个 client
+    if (emailRetry > 0) {
+      console.log(`[cpa-registration] ${workerId} 邮箱被占用，换新邮箱重试 (${emailRetry}/${MAX_EMAIL_RETRIES})`);
+      reportStatus("retrying_email");
 
-  if (useSub2api) {
-    // ─── sub2api 路径 ───
-    const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
+      // 标记旧邮箱为 failed
+      if (bindEmail && db && db.markHotmailAccountFailed) {
+        db.markHotmailAccountFailed(bindEmail);
+      }
+
+      // 获取新邮箱
+      try {
+        const mailbox = await import("./mailbox.js");
+        bindEmail = await mailbox.getEmailAddress();
+        fetchAddEmailOtp = async () => {
+          const startedAt = Date.now();
+          console.log(`[cpa-registration] ${workerId} 等待邮件 OTP for ${bindEmail}`);
+          return await mailbox.getEmailVerificationCode(bindEmail, { minTimestampMs: startedAt });
+        };
+        console.log(`[cpa-registration] ${workerId} 新邮箱: ${bindEmail}`);
+
+        // 更新同一个 client 的邮箱（不重建 client，保持 session/IP/指纹不变）
+        client.bindEmail = bindEmail;
+        client.fetchAddEmailOtp = fetchAddEmailOtp;
+
+        if (db) {
+          db.updateWorkerSlot(workerId, { bind_email: bindEmail });
+          db.updateAttempt(attemptId, { email: bindEmail });
+        }
+      } catch (error) {
+        console.warn(`[cpa-registration] ${workerId} 换邮箱失败: ${(error as Error).message}`);
+        break; // 无法获取新邮箱，退出重试
+      }
+    }
+
+    reportStatus("cpa_oauth");
+
+    // 根据 tokenBackend 选择后端
+    const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
+
+    let authorizeUrl: string;
+    let sub2apiSessionId: string | undefined;
+    let sub2apiToken: string | undefined;
+
+    if (useSub2api) {
+      const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
+      try {
+        sub2apiToken = await sub2apiLogin(appConfig.sub2api.baseUrl, appConfig.sub2api.email, appConfig.sub2api.password);
+        const result = await sub2apiGenerateAuthUrl(appConfig.sub2api.baseUrl, sub2apiToken);
+        authorizeUrl = result.authUrl;
+        sub2apiSessionId = result.sessionId;
+      } catch (error) {
+        reportStatus("failed");
+        return {
+          status: "failed",
+          phone: phoneNumber,
+          email: bindEmail,
+          password,
+          error: `sub2api auth-url failed: ${(error as Error).message}`,
+          activationId,
+          workerId,
+          attemptId,
+        };
+      }
+    } else {
+      const { requestCodexAuthUrl } = await import("./cpa-codex.js");
+      try {
+        console.log(`[CPA] ① 获取授权 URL`);
+        const result = await requestCodexAuthUrl(cpaBase, cpaKey);
+        authorizeUrl = result.authorizeUrl;
+        console.log(`[CPA] ① ✓ 授权 URL 已获取`);
+      } catch (error) {
+        reportStatus("failed");
+        return {
+          status: "failed",
+          phone: phoneNumber,
+          email: bindEmail,
+          password,
+          error: `CPA auth-url failed: ${(error as Error).message}`,
+          activationId,
+          workerId,
+          attemptId,
+        };
+      }
+    }
 
     try {
-      sub2apiToken = await sub2apiLogin(appConfig.sub2api.baseUrl, appConfig.sub2api.email, appConfig.sub2api.password);
-      const result = await sub2apiGenerateAuthUrl(appConfig.sub2api.baseUrl, sub2apiToken);
-      authorizeUrl = result.authUrl;
-      sub2apiSessionId = result.sessionId;
+      console.log(`[${useSub2api ? "sub2api" : "CPA"}] ② OAuth 登录`);
+      callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
+      console.log(`[${useSub2api ? "sub2api" : "CPA"}] ② ✓ OAuth 登录完成`);
+      break; // 成功，跳出重试循环
     } catch (error) {
-      reportStatus("failed");
-      return {
-        status: "failed",
-        phone: phoneNumber,
-        email: bindEmail,
-        password,
-        error: `sub2api auth-url failed: ${(error as Error).message}`,
-        activationId,
-        workerId,
-        attemptId,
-      };
-    }
-  } else {
-    // ─── CPA 路径（原有逻辑）───
-    const { requestCodexAuthUrl } = await import("./cpa-codex.js");
+      const errMsg = (error as Error).message;
 
-    try {
-      console.log(`[CPA] ① 获取授权 URL`);
-      const result = await requestCodexAuthUrl(cpaBase, cpaKey);
-      authorizeUrl = result.authorizeUrl;
-      console.log(`[CPA] ① ✓ 授权 URL 已获取`);
-    } catch (error) {
-      reportStatus("failed");
-      return {
-        status: "failed",
-        phone: phoneNumber,
-        email: bindEmail,
-        password,
-        error: `CPA auth-url failed: ${(error as Error).message}`,
-        activationId,
-        workerId,
-        attemptId,
-      };
-    }
-  }
+      if (errMsg.includes("email_already_in_use") && emailRetry < MAX_EMAIL_RETRIES) {
+        console.warn(`[cpa-registration] ${workerId} 邮箱 ${bindEmail} 已被占用，将换新邮箱重试`);
+        continue; // 换邮箱重试
+      }
 
-  const client = new OpenAIClient({
-    email: phoneNumber,
-    password,
-    deviceProfile: generateRandomDeviceProfile(),
-    manualMode: false,
-    smsBroker: undefined,
-    bindEmail,
-    fetchAddEmailOtp,
-  });
-
-  let callbackUrl: string;
-  try {
-    console.log(`[${useSub2api ? "sub2api" : "CPA"}] ② OAuth 登录`);
-    callbackUrl = await client.authLoginViaCpaAuthorizeURL(authorizeUrl);
-    console.log(`[${useSub2api ? "sub2api" : "CPA"}] ② ✓ OAuth 登录完成`);
-  } catch (error) {
-    const errMsg = (error as Error).message;
-
-    // 邮箱绑定失败时，处理邮箱状态和孤儿账号
-    if (bindEmail && db) {
-      if (errMsg.includes("email_already_in_use")) {
-        // 邮箱已被占用，标记为失败
-        console.warn(`[cpa-registration] ${workerId} 邮箱 ${bindEmail} 已被占用，标记为 failed`);
-        if (db.markHotmailAccountFailed) {
-          db.markHotmailAccountFailed(bindEmail);
+      // 其他错误或重试耗尽，处理邮箱状态和孤儿账号
+      if (bindEmail && db) {
+        if (errMsg.includes("email_already_in_use")) {
+          // 重试耗尽，标记为 failed 并存孤儿
+          console.warn(`[cpa-registration] ${workerId} 邮箱 ${bindEmail} 已被占用，重试耗尽`);
+          if (db.markHotmailAccountFailed) {
+            db.markHotmailAccountFailed(bindEmail);
+          }
+        } else {
+          // 其他错误（网络超时等），标记为可重试
+          console.warn(`[cpa-registration] ${workerId} OAuth 登录失败，标记邮箱 ${bindEmail} 为可重试（retryable）`);
+          if (db.resetHotmailAccount) {
+            db.resetHotmailAccount(bindEmail);
+          }
         }
         // 存储孤儿账号
         if (db.saveOrphanedAccount) {
@@ -294,43 +342,37 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
             email: bindEmail,
             password,
             activation_id: activationId,
-            error_type: "email_already_in_use",
+            error_type: errMsg.includes("email_already_in_use") ? "email_already_in_use" : "other",
             error_message: errMsg,
             sms_code: smsCode || null,
             openai_registered: 1,
           });
-          console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（邮箱已被占用）`);
-        }
-      } else {
-        // 其他错误（网络超时等），标记为可重试（retryable）
-        console.warn(`[cpa-registration] ${workerId} OAuth 登录失败，标记邮箱 ${bindEmail} 为可重试（retryable）`);
-        if (db.resetHotmailAccount) {
-          db.resetHotmailAccount(bindEmail);  // 会标记为 retryable
-        }
-        // 也存储孤儿账号，方便后续追踪
-        if (db.saveOrphanedAccount) {
-          db.saveOrphanedAccount({
-            phone: phoneNumber,
-            email: bindEmail,
-            password,
-            activation_id: activationId,
-            error_type: "other",
-            error_message: errMsg,
-            sms_code: smsCode || null,
-            openai_registered: 1,
-          });
-          console.log(`[cpa-registration] ${workerId} 已存储孤儿账号（OAuth 登录失败）`);
+          console.log(`[cpa-registration] ${workerId} 已存储孤儿账号`);
         }
       }
-    }
 
+      reportStatus("failed");
+      return {
+        status: "failed",
+        phone: phoneNumber,
+        email: bindEmail,
+        password,
+        error: `OAuth login failed: ${errMsg}`,
+        activationId,
+        workerId,
+        attemptId,
+      };
+    }
+  }
+
+  if (!callbackUrl) {
     reportStatus("failed");
     return {
       status: "failed",
       phone: phoneNumber,
       email: bindEmail,
       password,
-      error: `OAuth login failed: ${errMsg}`,
+      error: "OAuth login failed: no callback URL after retries",
       activationId,
       workerId,
       attemptId,
@@ -339,6 +381,8 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   // Step 4: 提交 callback (CPA 或 sub2api)
   reportStatus("cpa_submit");
+
+  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
 
   if (useSub2api) {
     // ─── sub2api 路径：exchangeCode + createFromOAuth ───
@@ -367,7 +411,9 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
       const createResult = await sub2apiCreateFromOAuth(
         appConfig.sub2api.baseUrl,
         sub2apiToken!,
-        exchangeResult.refreshToken,
+        sub2apiSessionId!,
+        code,
+        state,
         appConfig.sub2api.groupIds,
       );
 

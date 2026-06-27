@@ -118,7 +118,7 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
         if (!code) throw new Error(`callback URL 中没有 code: ${callbackURL.slice(0, 200)}`);
 
         const exchangeResult = await exchangeCode(appConfig.sub2api.baseUrl, sub2apiToken!, sub2apiSessionId!, code, state);
-        const createResult = await createFromOAuth(appConfig.sub2api.baseUrl, sub2apiToken!, exchangeResult.refreshToken, appConfig.sub2api.groupIds);
+        const createResult = await createFromOAuth(appConfig.sub2api.baseUrl, sub2apiToken!, sub2apiSessionId!, code, state, appConfig.sub2api.groupIds);
 
         if (!createResult.success) {
           throw new Error(`sub2api 入库失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);

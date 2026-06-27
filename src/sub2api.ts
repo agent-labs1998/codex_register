@@ -169,7 +169,9 @@ export interface Sub2apiCreateAccountResult {
 export async function createFromOAuth(
     baseUrl: string,
     adminToken: string,
-    refreshToken: string,
+    sessionId: string,
+    code: string,
+    state: string,
     groupIds?: number[],
     timeoutMs = 20000,
 ): Promise<Sub2apiCreateAccountResult> {
@@ -178,7 +180,11 @@ export async function createFromOAuth(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
         console.log(`[sub2api] ③ 创建账户入库`);
-        const bodyData: Record<string, any> = {refresh_token: refreshToken};
+        const bodyData: Record<string, any> = {
+            session_id: sessionId,
+            code: code,
+            state: state,
+        };
         if (groupIds && groupIds.length > 0) {
             bodyData.group_ids = groupIds;
         }

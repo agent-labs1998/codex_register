@@ -236,8 +236,8 @@ export class OpenAIClient {
     codeVerifier = "";
     deviceID = "";
     readonly smsBroker?: ISMSActivationBroker;
-    readonly bindEmail: string;
-    readonly fetchAddEmailOtp?: () => Promise<string>;
+    bindEmail: string;
+    fetchAddEmailOtp?: () => Promise<string>;
 
     constructor(options: OpenAIClientOptions) {
         this.smsBroker = options.smsBroker;
