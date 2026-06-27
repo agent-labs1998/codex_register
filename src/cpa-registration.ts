@@ -220,6 +220,12 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
       fetchAddEmailOtp,
     });
 
+  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
+
+  let authorizeUrl: string;
+  let sub2apiSessionId: string | undefined;
+  let sub2apiToken: string | undefined;
+
   for (let emailRetry = 0; emailRetry <= MAX_EMAIL_RETRIES; emailRetry++) {
     // 如果是重试（email_already_in_use），换新邮箱，但保持同一个 client
     if (emailRetry > 0) {
@@ -257,13 +263,6 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
     }
 
     reportStatus("cpa_oauth");
-
-    // 根据 tokenBackend 选择后端
-    const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
-
-    let authorizeUrl: string;
-    let sub2apiSessionId: string | undefined;
-    let sub2apiToken: string | undefined;
 
     if (useSub2api) {
       const { getSub2apiToken: sub2apiLogin, generateAuthUrl: sub2apiGenerateAuthUrl } = await import("./sub2api.js");
@@ -381,8 +380,6 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
 
   // Step 4: 提交 callback (CPA 或 sub2api)
   reportStatus("cpa_submit");
-
-  const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
 
   if (useSub2api) {
     // ─── sub2api 路径：createFromOAuth（内部自动完成 code 换 token + 入库）───
