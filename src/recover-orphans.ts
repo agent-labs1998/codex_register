@@ -2,7 +2,7 @@ import { appConfig } from "./config.js";
 import { generateRandomDeviceProfile } from "./device-profile.js";
 import { OpenAIClient } from "./openai.js";
 import { LocalDB } from "./local-db.js";
-import { createCoroabetProvider } from "./mail/coroabet.js";
+import { MAILBOX_CONFIG } from "./mailbox.js";
 import { log } from "./logger.js";
 
 export interface RecoverOrphansOptions {
@@ -45,23 +45,50 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
     console.log(`${"═".repeat(60)}`);
 
     try {
-      // Step 1: 创建新邮箱（用 coroabet，每次都生成全新地址，不会重复）
-      console.log(`[恢复] 创建新邮箱...`);
+      // Step 1: 创建新邮箱（使用 config.json 的 provider）
+      console.log(`[恢复] 创建新邮箱 (provider: ${MAILBOX_CONFIG.provider})...`);
       let newEmail: string;
-      const coroabet = createCoroabetProvider();
-      try {
-        newEmail = await coroabet.getEmailAddress();
-      } catch (error) {
-        const errMsg = (error as Error).message;
-        console.log(`[恢复] ❌ 邮箱创建失败: ${errMsg}`);
-        if (errMsg.includes("pool") || errMsg.includes("exhausted") || errMsg.includes("no available")) {
-          console.log(`[恢复] 邮箱池耗尽，终止恢复`);
-          skipped += orphans.length - i;
-          break;
+      let fetchEmailOtp: () => Promise<string>;
+
+      if (MAILBOX_CONFIG.provider === "hotmail") {
+        const { createHotmailProvider } = await import("./mail/hotmail.js");
+        const hotmailProvider = createHotmailProvider(db);
+        try {
+          newEmail = await hotmailProvider.getEmailAddress();
+        } catch (error) {
+          const errMsg = (error as Error).message;
+          console.log(`[恢复] ❌ 邮箱创建失败: ${errMsg}`);
+          if (errMsg.includes("pool") || errMsg.includes("exhausted") || errMsg.includes("no available")) {
+            console.log(`[恢复] 邮箱池耗尽，终止恢复`);
+            skipped += orphans.length - i;
+            break;
+          }
+          db.updateOrphanedNote(orphan.id, `邮箱创建失败: ${errMsg}`);
+          failed++;
+          continue;
         }
-        db.updateOrphanedNote(orphan.id, `邮箱创建失败: ${errMsg}`);
-        failed++;
-        continue;
+        fetchEmailOtp = async () => {
+          return await hotmailProvider.getEmailVerificationCode(newEmail, { minTimestampMs: Date.now() });
+        };
+      } else {
+        const { getEmailAddress, getEmailVerificationCode } = await import("./mailbox.js");
+        try {
+          newEmail = await getEmailAddress();
+        } catch (error) {
+          const errMsg = (error as Error).message;
+          console.log(`[恢复] ❌ 邮箱创建失败: ${errMsg}`);
+          if (errMsg.includes("pool") || errMsg.includes("exhausted") || errMsg.includes("no available")) {
+            console.log(`[恢复] 邮箱池耗尽，终止恢复`);
+            skipped += orphans.length - i;
+            break;
+          }
+          db.updateOrphanedNote(orphan.id, `邮箱创建失败: ${errMsg}`);
+          failed++;
+          continue;
+        }
+        fetchEmailOtp = async () => {
+          return await getEmailVerificationCode(newEmail, { minTimestampMs: Date.now() });
+        };
       }
       console.log(`[恢复] 孤儿 #${seq} ${orphan.phone} → 新邮箱 ${newEmail}`);
 
@@ -97,7 +124,7 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
         bindEmail: newEmail,
         fetchAddEmailOtp: async () => {
           console.log(`[恢复] 等待邮箱验证码 for ${newEmail}...`);
-          return await coroabet.getEmailVerificationCode(newEmail, { minTimestampMs: Date.now() });
+          return await fetchEmailOtp();
         },
       });
 
