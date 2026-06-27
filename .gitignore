@@ -1,4 +1,5 @@
 config.json
+tokens.txt
 node_modules/
 bundle/
 auth/
