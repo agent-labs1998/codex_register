@@ -385,8 +385,8 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
   const useSub2api = appConfig.tokenBackend === "sub2api" && appConfig.sub2api.baseUrl && appConfig.sub2api.email;
 
   if (useSub2api) {
-    // ─── sub2api 路径：exchangeCode + createFromOAuth ───
-    const { exchangeCode: sub2apiExchangeCode, createFromOAuth: sub2apiCreateFromOAuth } = await import("./sub2api.js");
+    // ─── sub2api 路径：createFromOAuth（内部自动完成 code 换 token + 入库）───
+    const { createFromOAuth: sub2apiCreateFromOAuth } = await import("./sub2api.js");
 
     try {
       // 从 callback URL 提取 code 和 state
@@ -398,16 +398,8 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
         throw new Error(`callback URL 中没有 code 参数: ${callbackUrl.slice(0, 200)}`);
       }
 
-      // 步骤 8: 用 code 换 token
-      const exchangeResult = await sub2apiExchangeCode(
-        appConfig.sub2api.baseUrl,
-        sub2apiToken!,
-        sub2apiSessionId!,
-        code,
-        state,
-      );
-
-      // 步骤 9: 创建账户入库
+      // 一步完成：用 code 换 token + 创建账户入库
+      // sub2api 内部会自动调用 ExchangeCode，不需要我们单独调
       const createResult = await sub2apiCreateFromOAuth(
         appConfig.sub2api.baseUrl,
         sub2apiToken!,
@@ -421,13 +413,12 @@ export async function runCpaRegistration(task: RegistrationTask): Promise<CodexC
         throw new Error(`sub2api create-from-oauth 失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);
       }
 
-      // 拿到 accessToken
-      const accessToken = exchangeResult.accessToken;
+      // sub2api 模式下 token 由 sub2api 管理，不需要我们持有
+      const accessToken = "";
 
       reportStatus("success");
       console.log(`${"═".repeat(60)}`);
       console.log(`✅ 注册成功 | ${phoneNumber} | ${bindEmail}`);
-      console.log(`✅ Token: ${accessToken.slice(0, 30)}... (${accessToken.length} 字符)`);
       console.log(`✅ sub2api 账户 ID: ${createResult.accountId || "unknown"}`);
       console.log(`✅ IP: ${ipInfo.ip} | ${ipInfo.country} ${ipInfo.city} | ${ipInfo.isp}`);
       console.log(`${"═".repeat(60)}\n`);

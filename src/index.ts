@@ -315,10 +315,10 @@ async function runOnce(db?: LocalDB): Promise<void> {
         console.log(`[codex-cpa]     callback: ${callbackUrl.slice(0, 120)}...`);
 
         if (useSub2api) {
-            // ─── sub2api 路径：exchangeCode + createFromOAuth ───
-            const { exchangeCode: sub2apiExchangeCode, createFromOAuth: sub2apiCreateFromOAuth } = await import("./sub2api.js");
+            // ─── sub2api 路径：createFromOAuth（内部自动完成 code 换 token + 入库）───
+            const { createFromOAuth: sub2apiCreateFromOAuth } = await import("./sub2api.js");
 
-            console.log(`[codex-cpa] [3] sub2api exchange-code + create-from-oauth`);
+            console.log(`[codex-cpa] [3] sub2api create-from-oauth（一步完成）`);
 
             // 从 callback URL 提取 code 和 state
             const callbackUrlObj = new URL(callbackUrl);
@@ -329,16 +329,7 @@ async function runOnce(db?: LocalDB): Promise<void> {
                 throw new Error(`callback URL 中没有 code 参数: ${callbackUrl.slice(0, 200)}`);
             }
 
-            // 步骤 8: 用 code 换 token
-            const exchangeResult = await sub2apiExchangeCode(
-                appConfig.sub2api.baseUrl,
-                sub2apiToken!,
-                sub2apiSessionId!,
-                code,
-                state,
-            );
-
-            // 步骤 9: 创建账户入库
+            // 一步完成：用 code 换 token + 创建账户入库
             const createResult = await sub2apiCreateFromOAuth(
                 appConfig.sub2api.baseUrl,
                 sub2apiToken!,
@@ -352,8 +343,9 @@ async function runOnce(db?: LocalDB): Promise<void> {
                 throw new Error(`sub2api create-from-oauth 失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);
             }
 
-            chatgptAccessToken = exchangeResult.accessToken;
-            console.log(`[codex-cpa] [✅️] 从 sub2api 拿到 access_token (${chatgptAccessToken.length} 字符, 账户ID=${createResult.accountId || "unknown"})`);
+            // sub2api 模式下 token 由 sub2api 管理
+            chatgptAccessToken = "";
+            console.log(`[codex-cpa] [✅️] sub2api 入库成功 (账户ID=${createResult.accountId || "unknown"})`);
         } else {
             // ─── CPA 路径（原有逻辑）───
             const {submitOAuthCallback, listAuthFiles, downloadAuthFile} = await import("./cpa-codex.js");

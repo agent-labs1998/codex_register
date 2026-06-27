@@ -108,22 +108,21 @@ export async function recoverOrphans(options: RecoverOrphansOptions): Promise<Re
       let accessToken = "";
 
       if (useSub2api) {
-        // ─── sub2api 路径 ───
+        // ─── sub2api 路径：createFromOAuth 一步完成 ───
         console.log(`[恢复] sub2api 入库...`);
-        const { exchangeCode, createFromOAuth } = await import("./sub2api.js");
+        const { createFromOAuth } = await import("./sub2api.js");
 
         const url = new URL(callbackURL);
         const code = url.searchParams.get("code") || "";
         const state = url.searchParams.get("state") || "";
         if (!code) throw new Error(`callback URL 中没有 code: ${callbackURL.slice(0, 200)}`);
 
-        const exchangeResult = await exchangeCode(appConfig.sub2api.baseUrl, sub2apiToken!, sub2apiSessionId!, code, state);
         const createResult = await createFromOAuth(appConfig.sub2api.baseUrl, sub2apiToken!, sub2apiSessionId!, code, state, appConfig.sub2api.groupIds);
 
         if (!createResult.success) {
           throw new Error(`sub2api 入库失败: status=${createResult.status} body=${createResult.body.slice(0, 300)}`);
         }
-        accessToken = exchangeResult.accessToken || "";
+        accessToken = "";
         console.log(`[恢复] ✓ sub2api 入库成功`);
 
       } else {
